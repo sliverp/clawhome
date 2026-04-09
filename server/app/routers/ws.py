@@ -21,7 +21,7 @@ from app.models.metric import Metric
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["websocket"])
+router = APIRouter(prefix="/ws", tags=["websocket"])
 
 
 def _get_db() -> Session:
@@ -35,7 +35,7 @@ def _get_db() -> Session:
 
 # ── Agent WebSocket ──────────────────────────────────────────────────────────
 
-@router.websocket("/ws/agent")
+@router.websocket("/agent")
 async def agent_ws(websocket: WebSocket):
     await websocket.accept()
     db = SessionLocal()
@@ -170,7 +170,7 @@ async def agent_ws(websocket: WebSocket):
 
 # ── Browser WebSocket ────────────────────────────────────────────────────────
 
-@router.websocket("/ws/dashboard")
+@router.websocket("/dashboard")
 async def dashboard_ws(websocket: WebSocket, token: str = Query(...)):
     await websocket.accept()
     db = SessionLocal()

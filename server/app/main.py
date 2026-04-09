@@ -28,7 +28,7 @@ app.include_router(auth_router)
 app.include_router(agents_router)
 app.include_router(install_router)
 app.include_router(metrics_router)
-app.include_router(ws_router)
+app.include_router(ws_router, prefix="/api")
 
 
 @app.get("/health")

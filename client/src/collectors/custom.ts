@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { MetricsConfig, MetricSourceConfig } from "../config.js";
 import { MetricSnapshot } from "./base.js";
 import { collectSystemMetrics } from "./system.js";
+import { collectOpenclawMetrics } from "./openclaw.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -71,14 +72,25 @@ async function collectFromApi(cfg: MetricSourceConfig): Promise<number | null> {
   }
 }
 
-export async function collectCustomMetrics(metricsConfig: MetricsConfig): Promise<MetricSnapshot> {
+/** Agent-type-specific native collectors */
+const NATIVE_COLLECTORS: Record<string, () => MetricSnapshot> = {
+  openclaw: collectOpenclawMetrics,
+}
+
+export async function collectCustomMetrics(metricsConfig: MetricsConfig, agentType?: string): Promise<MetricSnapshot> {
   const systemMetrics = await collectSystemMetrics();
   const snapshot: MetricSnapshot = { ...systemMetrics };
 
+  // Run native collector for known agent types (reads data files directly)
+  if (agentType && NATIVE_COLLECTORS[agentType]) {
+    const nativeMetrics = NATIVE_COLLECTORS[agentType]()
+    Object.assign(snapshot, nativeMetrics)
+  }
+
+  // Then run any additional metrics defined in config (file/command/api sources)
   await Promise.all(
     Object.entries(metricsConfig).map(async ([key, cfg]) => {
-      // system metrics already collected
-      if (cfg.source === "system") return;
+      if (cfg.source === "system") return; // already collected
 
       let value: number | null = null;
       if (cfg.source === "file") value = await collectFromFile(cfg);

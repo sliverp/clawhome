@@ -11,12 +11,20 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "README.md"
   ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["agent", "monitor", "clawhome"],
+  "license": "MIT",
   "dependencies": {
     "commander": "^12.1.0",
     "js-yaml": "^4.1.0",

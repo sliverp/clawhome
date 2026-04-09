@@ -35,7 +35,7 @@ export class ClawHomeClient {
   // ── Connection ────────────────────────────────────────────────────────────
 
   private connect(): void {
-    const wsUrl = this.instanceConfig.serverUrl.replace(/^http/, "ws") + "/ws/agent";
+    const wsUrl = this.instanceConfig.serverUrl.replace(/^http/, "ws") + "/api/ws/agent";
     console.log(`[clawhome] Connecting to ${wsUrl}`);
 
     this.ws = new WebSocket(wsUrl);

@@ -126,7 +126,7 @@ async def send_command(
 
 # ── Install page (no auth required) ─────────────────────────────────────────
 
-install_router = APIRouter(prefix="/api", tags=["install"])
+install_router = APIRouter(tags=["install"])
 
 
 @install_router.get("/install/{bind_token}", response_class=PlainTextResponse)

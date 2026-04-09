@@ -80,7 +80,10 @@ do_start() {
         warn "后端已在运行 (PID $(cat "$SERVER_PID_FILE"))"
     else
         info "执行数据库迁移..."
-        cd "$SERVER_DIR" && uv run alembic upgrade head 2>&1 | grep -E "Running upgrade|INFO" || true
+        if ! cd "$SERVER_DIR" && uv run alembic upgrade head 2>&1; then
+            error "数据库迁移失败，请检查 .env 中的数据库配置"
+            return 1
+        fi
 
         info "启动后端 (port 8000)..."
         cd "$SERVER_DIR"

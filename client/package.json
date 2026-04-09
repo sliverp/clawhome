@@ -1,0 +1,32 @@
+{
+  "name": "clawhome-client",
+  "version": "0.1.0",
+  "description": "ClawHome Agent Monitor - Client",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "clawhome-client": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "dependencies": {
+    "commander": "^12.1.0",
+    "js-yaml": "^4.1.0",
+    "systeminformation": "^5.23.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.6",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.3"
+  }
+}

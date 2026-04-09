@@ -1,0 +1,25 @@
+agent_type: openclaw
+
+commands:
+  restart: "openclaw gateway restart"
+  stop: "openclaw gateway stop"
+  start: "openclaw gateway start"
+  status: "openclaw gateway status"
+
+metrics:
+  cpu_percent:
+    source: system
+  memory_mb:
+    source: system
+  uptime:
+    source: system
+  token_count:
+    source: file
+    path: ~/.openclaw/stats.json
+    jq: ".total_tokens"
+  conversation_count:
+    source: file
+    path: ~/.openclaw/stats.json
+    jq: ".conversations"
+
+report_interval: 30

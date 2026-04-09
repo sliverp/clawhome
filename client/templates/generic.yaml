@@ -1,0 +1,13 @@
+agent_type: generic
+
+commands: {}
+
+metrics:
+  cpu_percent:
+    source: system
+  memory_mb:
+    source: system
+  uptime:
+    source: system
+
+report_interval: 30

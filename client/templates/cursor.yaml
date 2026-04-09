@@ -1,0 +1,15 @@
+agent_type: cursor
+
+commands:
+  # cursor does not expose a standard restart command; customize as needed
+  restart: "pkill -f cursor && sleep 2 && cursor"
+
+metrics:
+  cpu_percent:
+    source: system
+  memory_mb:
+    source: system
+  uptime:
+    source: system
+
+report_interval: 30

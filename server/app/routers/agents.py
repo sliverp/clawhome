@@ -64,7 +64,7 @@ def create_agent(
     db.commit()
     db.refresh(agent)
 
-    install_url = f"{settings.SERVER_BASE_URL}/install/{bind_token}"
+    install_url = f"{settings.SERVER_BASE_URL}/api/install/{bind_token}"
     prompt = (
         f"请阅读 {install_url} 并按照说明安装监控客户端，完成后告诉我结果。"
     )
@@ -126,7 +126,7 @@ async def send_command(
 
 # ── Install page (no auth required) ─────────────────────────────────────────
 
-install_router = APIRouter(tags=["install"])
+install_router = APIRouter(prefix="/api", tags=["install"])
 
 
 @install_router.get("/install/{bind_token}", response_class=PlainTextResponse)

@@ -89,6 +89,7 @@ do_start() {
         cd "$SERVER_DIR"
         nohup uv run uvicorn app.main:app \
             --host 0.0.0.0 --port 8000 \
+            --root-path /api \
             >> "$SERVER_LOG" 2>&1 &
         echo $! > "$SERVER_PID_FILE"
 

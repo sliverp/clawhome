@@ -177,7 +177,7 @@ export class ClawHomeClient {
 
   // Subclasses may override to inject additional metrics (e.g. from local API)
   protected async collectMetrics(): Promise<Record<string, number>> {
-    return collectCustomMetrics(this.agentConfig.metrics);
+    return collectCustomMetrics(this.agentConfig.metrics, this.instanceConfig.agentType);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

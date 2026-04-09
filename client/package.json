@@ -1,6 +1,6 @@
 {
   "name": "clawhome-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ClawHome Agent Monitor - Client",
   "type": "module",
   "main": "dist/index.js",
@@ -23,7 +23,11 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["agent", "monitor", "clawhome"],
+  "keywords": [
+    "agent",
+    "monitor",
+    "clawhome"
+  ],
   "license": "MIT",
   "dependencies": {
     "commander": "^12.1.0",

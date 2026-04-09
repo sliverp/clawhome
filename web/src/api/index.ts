@@ -67,6 +67,7 @@ export interface Agent {
   last_seen: string | null
   local_port: number | null
   created_at: string
+  install_url: string | null
 }
 
 export interface AgentInstallInfo {

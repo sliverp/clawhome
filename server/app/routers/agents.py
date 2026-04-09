@@ -23,6 +23,18 @@ from app.schemas.agent import (
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
+def _agent_out(agent: Agent) -> AgentOut:
+    """Convert Agent model to AgentOut, injecting install_url if bind_token still valid."""
+    install_url = None
+    if agent.bind_token and agent.bind_token_expires_at:
+        expires = agent.bind_token_expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) < expires:
+            install_url = f"{settings.SERVER_BASE_URL}/api/install/{agent.bind_token}"
+    out = AgentOut.model_validate(agent)
+    out.install_url = install_url
+    return out
+
+
 def _get_agent_or_404(agent_id: int, user_id: int, db: Session) -> Agent:
     agent = db.query(Agent).filter(Agent.id == agent_id, Agent.user_id == user_id).first()
     if not agent:
@@ -36,11 +48,10 @@ def list_agents(
     db: Session = Depends(get_db),
 ):
     agents = db.query(Agent).filter(Agent.user_id == current_user.id).all()
-    # reflect live status from ws_manager
     for agent in agents:
         if not ws_manager.is_agent_online(agent.id) and agent.status == "online":
             agent.status = "offline"
-    return agents
+    return [_agent_out(a) for a in agents]
 
 
 @router.post("", response_model=AgentInstallInfo, status_code=status.HTTP_201_CREATED)
@@ -68,7 +79,7 @@ def create_agent(
     prompt = (
         f"请阅读 {install_url} 并按照说明安装监控客户端，完成后告诉我结果。"
     )
-    return AgentInstallInfo(agent=AgentOut.model_validate(agent), install_url=install_url, prompt=prompt)
+    return AgentInstallInfo(agent=_agent_out(agent), install_url=install_url, prompt=prompt)
 
 
 @router.get("/{agent_id}", response_model=AgentOut)
@@ -77,7 +88,7 @@ def get_agent(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return _get_agent_or_404(agent_id, current_user.id, db)
+    return _agent_out(_get_agent_or_404(agent_id, current_user.id, db))
 
 
 @router.patch("/{agent_id}/name", response_model=AgentOut)
@@ -91,7 +102,7 @@ def rename_agent(
     agent.name = body.name
     db.commit()
     db.refresh(agent)
-    return agent
+    return _agent_out(agent)
 
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)

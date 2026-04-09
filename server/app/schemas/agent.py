@@ -23,6 +23,7 @@ class AgentOut(BaseModel):
     local_port: int | None
     metadata_: Any = None
     created_at: datetime
+    install_url: str | None = None  # present if bind_token still valid
 
     model_config = {"from_attributes": True}
 

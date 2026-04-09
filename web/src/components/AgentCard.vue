@@ -35,16 +35,51 @@
 
     <div class="card-footer">
       <span class="agent-type-tag">{{ agent.agent_type }}</span>
-      <span class="view-detail">查看详情 →</span>
+      <div class="footer-right">
+        <span
+          v-if="agent.install_url"
+          class="install-btn"
+          @click.stop="showInstall = true"
+          title="查看安装提示词"
+        >安装 ↗</span>
+        <span class="view-detail">查看详情 →</span>
+      </div>
+    </div>
+
+    <!-- Install prompt modal -->
+    <div v-if="showInstall" class="install-overlay" @click.stop="showInstall = false">
+      <div class="install-modal" @click.stop>
+        <div class="install-modal-title">安装提示词</div>
+        <div class="install-prompt">{{ installPrompt }}</div>
+        <div class="install-modal-actions">
+          <button class="btn btn-ghost btn-sm" @click.stop="copyPrompt">{{ copied ? '已复制' : '复制' }}</button>
+          <button class="btn btn-primary btn-sm" @click.stop="showInstall = false">关闭</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { Agent, MetricLatest } from '../api/index.js'
 
 const props = defineProps<{ agent: Agent; metrics?: MetricLatest }>()
+
+const showInstall = ref(false)
+const copied = ref(false)
+
+const installPrompt = computed(() =>
+  props.agent.install_url
+    ? `请阅读 ${props.agent.install_url} 并按照说明安装监控客户端，完成后告诉我结果。`
+    : ''
+)
+
+async function copyPrompt() {
+  await navigator.clipboard.writeText(installPrompt.value)
+  copied.value = true
+  setTimeout(() => (copied.value = false), 2000)
+}
 
 const agentIcon = computed(() => {
   const icons: Record<string, string> = { openclaw: '🦀', cursor: '🖱️', claude: '🤖', gemini: '✨', generic: '⚙️' }
@@ -110,4 +145,29 @@ function formatLastSeen(ts: string | null) {
   color: #94a3b8;
 }
 .view-detail { font-size: 12px; color: #6366f1; }
+.footer-right { display: flex; align-items: center; gap: 10px; }
+.install-btn { font-size: 12px; color: #f59e0b; cursor: pointer; }
+.install-btn:hover { text-decoration: underline; }
+
+/* Install modal */
+.install-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+}
+.install-modal {
+  background: #1a1d2e; border: 1px solid #2d3148;
+  border-radius: 12px; padding: 24px;
+  width: 100%; max-width: 500px;
+}
+.install-modal-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; }
+.install-prompt {
+  background: #0f1117; border: 1px solid #2d3148;
+  border-radius: 8px; padding: 14px;
+  font-size: 13px; line-height: 1.7;
+  word-break: break-all; margin-bottom: 14px;
+}
+.install-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
 </style>

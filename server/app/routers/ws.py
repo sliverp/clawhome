@@ -93,7 +93,13 @@ async def agent_ws(websocket: WebSocket):
 
     try:
         while True:
-            raw = await websocket.receive_text()
+            try:
+                raw = await websocket.receive_text()
+            except RuntimeError as exc:
+                if "WebSocket is not connected" in str(exc):
+                    logger.info("Agent WS closed while waiting for message")
+                    break
+                raise
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
@@ -220,7 +226,7 @@ async def agent_ws(websocket: WebSocket):
                     })
                     continue
 
-                metadata = agent.metadata_ if isinstance(agent.metadata_, dict) else {}
+                metadata = dict(agent.metadata_) if isinstance(agent.metadata_, dict) else {}
                 metadata.update(data)
                 agent.metadata_ = metadata
                 agent.last_seen = datetime.now(timezone.utc)

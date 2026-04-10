@@ -226,6 +226,7 @@ async def agent_ws(websocket: WebSocket):
                     })
                     continue
 
+                logger.info("Agent state from agent %s: %s", agent.id, data)
                 metadata = dict(agent.metadata_) if isinstance(agent.metadata_, dict) else {}
                 metadata.update(data)
                 agent.metadata_ = metadata

@@ -213,6 +213,7 @@ export class ClawHomeClient {
       const metrics = await this.collectMetrics();
       this.send({ type: "metrics", data: metrics });
       const state = this.collectState();
+      console.log("[clawhome] Collected agent state:", JSON.stringify(state));
       if (Object.keys(state).length > 0) {
         this.send({ type: "agent_state", data: state });
       }

@@ -14,6 +14,7 @@ from time import monotonic
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
+from starlette.websockets import WebSocketState
 
 from app.core.database import SessionLocal
 from app.core.security import decode_token
@@ -47,9 +48,24 @@ async def agent_ws(websocket: WebSocket):
     agent: Agent | None = None
     last_client_pong = monotonic()
     server_ping_task: asyncio.Task[None] | None = None
+    closing = False
+
+    async def safe_send_json(payload: dict) -> bool:
+        if (
+            websocket.application_state is not WebSocketState.CONNECTED
+            or websocket.client_state is not WebSocketState.CONNECTED
+        ):
+            return False
+        try:
+            await websocket.send_text(json.dumps(payload))
+            return True
+        except RuntimeError:
+            return False
+        except WebSocketDisconnect:
+            return False
 
     async def start_server_heartbeat():
-        nonlocal server_ping_task, last_client_pong
+        nonlocal server_ping_task, last_client_pong, closing
         if server_ping_task and not server_ping_task.done():
             return
         last_client_pong = monotonic()
@@ -63,12 +79,15 @@ async def agent_ws(websocket: WebSocket):
                     return
                 if monotonic() - last_client_pong > CLIENT_PONG_TIMEOUT_SECONDS:
                     logger.warning("Agent %s missed server heartbeat pong, closing socket", agent.id)
+                    closing = True
                     await websocket.close(code=1011, reason="heartbeat timeout")
                     return
-                await websocket.send_text(json.dumps({
+                sent = await safe_send_json({
                     "type": "ping",
                     "data": {"ts": int(datetime.now(timezone.utc).timestamp() * 1000)},
-                }))
+                })
+                if not sent:
+                    return
 
         server_ping_task = asyncio.create_task(_heartbeat())
 
@@ -78,9 +97,7 @@ async def agent_ws(websocket: WebSocket):
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_text(
-                    json.dumps({"type": "error", "data": {"code": "invalid_json", "message": "Invalid JSON"}})
-                )
+                await safe_send_json({"type": "error", "data": {"code": "invalid_json", "message": "Invalid JSON"}})
                 continue
 
             msg_type = msg.get("type")
@@ -91,16 +108,16 @@ async def agent_ws(websocket: WebSocket):
                 bind_token = data.get("bind_token")
                 found: Agent | None = db.query(Agent).filter(Agent.bind_token == bind_token).first()
                 if not found:
-                    await websocket.send_text(json.dumps({
+                    await safe_send_json({
                         "type": "error",
                         "data": {"code": "invalid_bind_token", "message": "Invalid bind token"},
-                    }))
+                    })
                     continue
                 if found.bind_token_expires_at and datetime.now(timezone.utc) > found.bind_token_expires_at.replace(tzinfo=timezone.utc):
-                    await websocket.send_text(json.dumps({
+                    await safe_send_json({
                         "type": "error",
                         "data": {"code": "expired_bind_token", "message": "Bind token expired"},
-                    }))
+                    })
                     continue
 
                 # Assign access_token and update agent metadata
@@ -121,10 +138,10 @@ async def agent_ws(websocket: WebSocket):
 
                 ws_manager.connect_agent(agent.id, websocket)
                 await start_server_heartbeat()
-                await websocket.send_text(json.dumps({
+                await safe_send_json({
                     "type": "bind_ok",
                     "data": {"access_token": access_token, "agent_id": agent.id},
-                }))
+                })
                 await ws_manager.broadcast_agent_status(agent.user_id, agent.id, "online")
 
             # ── auth (reconnect with existing access_token) ──────────────────
@@ -132,10 +149,10 @@ async def agent_ws(websocket: WebSocket):
                 access_token = data.get("access_token")
                 found = db.query(Agent).filter(Agent.access_token == access_token).first()
                 if not found:
-                    await websocket.send_text(json.dumps({
+                    await safe_send_json({
                         "type": "error",
                         "data": {"code": "invalid_access_token", "message": "Invalid access token"},
-                    }))
+                    })
                     continue
 
                 found.status = "online"
@@ -145,10 +162,10 @@ async def agent_ws(websocket: WebSocket):
 
                 ws_manager.connect_agent(agent.id, websocket)
                 await start_server_heartbeat()
-                await websocket.send_text(json.dumps({
+                await safe_send_json({
                     "type": "auth_ok",
                     "data": {"agent_id": agent.id, "agent_name": agent.name},
-                }))
+                })
                 await ws_manager.broadcast_agent_status(agent.user_id, agent.id, "online")
 
             # ── ping ─────────────────────────────────────────────────────────
@@ -156,10 +173,12 @@ async def agent_ws(websocket: WebSocket):
                 if agent:
                     agent.last_seen = datetime.now(timezone.utc)
                     db.commit()
-                await websocket.send_text(json.dumps({
+                if closing:
+                    continue
+                await safe_send_json({
                     "type": "pong",
                     "data": {"ts": data.get("ts")},
-                }))
+                })
 
             # ── pong (response to server heartbeat) ──────────────────────────
             elif msg_type == "pong":
@@ -171,10 +190,10 @@ async def agent_ws(websocket: WebSocket):
             # ── metrics ──────────────────────────────────────────────────────
             elif msg_type == "metrics":
                 if agent is None:
-                    await websocket.send_text(json.dumps({
+                    await safe_send_json({
                         "type": "error",
                         "data": {"code": "not_authenticated", "message": "Not authenticated"},
-                    }))
+                    })
                     continue
 
                 agent.last_seen = datetime.now(timezone.utc)
@@ -189,16 +208,16 @@ async def agent_ws(websocket: WebSocket):
             # ── agent_state ──────────────────────────────────────────────────
             elif msg_type == "agent_state":
                 if agent is None:
-                    await websocket.send_text(json.dumps({
+                    await safe_send_json({
                         "type": "error",
                         "data": {"code": "not_authenticated", "message": "Not authenticated"},
-                    }))
+                    })
                     continue
                 if not isinstance(data, dict):
-                    await websocket.send_text(json.dumps({
+                    await safe_send_json({
                         "type": "error",
                         "data": {"code": "invalid_state", "message": "State payload must be an object"},
-                    }))
+                    })
                     continue
 
                 metadata = agent.metadata_ if isinstance(agent.metadata_, dict) else {}

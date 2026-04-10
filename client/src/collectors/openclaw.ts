@@ -63,6 +63,15 @@ interface ResolvedSkill {
 }
 
 interface OpenclawConfig {
+  agents?: {
+    defaults?: {
+      model?: {
+        primary?: string
+        fallbacks?: string[]
+      }
+      models?: Record<string, unknown>
+    }
+  }
   plugins?: {
     entries?: Record<string, { enabled?: boolean }>
   }
@@ -83,6 +92,16 @@ interface SkillDetail {
   base_dir?: string
 }
 
+interface ConfiguredState {
+  configuredPlugins: string[]
+  enabledPlugins: string[]
+  configuredChannels: string[]
+  enabledChannels: string[]
+  configuredPrimaryModel?: string
+  configuredFallbackModels: string[]
+  configuredModels: string[]
+}
+
 function normalizeMetricKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
@@ -95,7 +114,7 @@ function countJsonlLines(filePath: string): number {
   }
 }
 
-function collectConfiguredState() {
+function collectConfiguredState(): ConfiguredState {
   const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json')
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as OpenclawConfig
@@ -103,12 +122,18 @@ function collectConfiguredState() {
     const enabledPlugins = configuredPlugins.filter((name) => config.plugins?.entries?.[name]?.enabled !== false)
     const configuredChannels = Object.keys(config.channels ?? {})
     const enabledChannels = configuredChannels.filter((name) => config.channels?.[name]?.enabled !== false)
+    const configuredPrimaryModel = config.agents?.defaults?.model?.primary
+    const configuredFallbackModels = config.agents?.defaults?.model?.fallbacks ?? []
+    const configuredModels = Object.keys(config.agents?.defaults?.models ?? {})
 
     return {
       configuredPlugins,
       enabledPlugins,
       configuredChannels,
       enabledChannels,
+      configuredPrimaryModel,
+      configuredFallbackModels,
+      configuredModels,
     }
   } catch {
     return {
@@ -116,6 +141,9 @@ function collectConfiguredState() {
       enabledPlugins: [] as string[],
       configuredChannels: [] as string[],
       enabledChannels: [] as string[],
+      configuredPrimaryModel: undefined,
+      configuredFallbackModels: [] as string[],
+      configuredModels: [] as string[],
     }
   }
 }
@@ -181,7 +209,13 @@ function collectChannelEvidence(enabledChannels: string[]) {
 export function collectOpenclawMetrics(): MetricSnapshot {
   const agentsDir = path.join(os.homedir(), '.openclaw', 'agents')
   if (!fs.existsSync(agentsDir)) return {}
-  const { enabledPlugins, enabledChannels } = collectConfiguredState()
+  const {
+    enabledPlugins,
+    enabledChannels,
+    configuredPrimaryModel,
+    configuredFallbackModels,
+    configuredModels,
+  } = collectConfiguredState()
   const { startedChannels, channelMessageCounts } = collectChannelEvidence(enabledChannels)
 
   // ── Aggregated totals across all sessions ──────────────────────────────
@@ -312,6 +346,14 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   snapshot['skill_count'] = latestResolvedSkills.length
   snapshot['channel_count'] = enabledChannels.length
   snapshot['channel_started_count'] = startedChannels.length
+  if (configuredPrimaryModel) {
+    snapshot[`model_configured_${normalizeMetricKey(configuredPrimaryModel)}`] = 1
+  }
+  snapshot['model_fallback_count'] = configuredFallbackModels.length
+  snapshot['model_available_count'] = configuredModels.length
+  if (latestModel) {
+    snapshot[`model_active_${normalizeMetricKey(`${latestProvider || 'unknown'}_${latestModel}`)}`] = 1
+  }
   for (const pluginName of enabledPlugins) {
     snapshot[`plugin_enabled_${normalizeMetricKey(pluginName)}`] = 1
   }
@@ -329,11 +371,21 @@ export function collectOpenclawMetrics(): MetricSnapshot {
 }
 
 export function collectOpenclawState(): StateSnapshot {
-  const { configuredPlugins, enabledPlugins, configuredChannels, enabledChannels } = collectConfiguredState()
+  const {
+    configuredPlugins,
+    enabledPlugins,
+    configuredChannels,
+    enabledChannels,
+    configuredPrimaryModel,
+    configuredFallbackModels,
+    configuredModels,
+  } = collectConfiguredState()
   const { startedChannels, channelMessageCounts } = collectChannelEvidence(enabledChannels)
   const details: Record<string, ChannelDetail> = {}
   let latestUpdatedAt = 0
   let skills: SkillDetail[] = []
+  let activeModel: string | null = null
+  let activeProvider: string | null = null
 
   for (const channelName of configuredChannels) {
     details[channelName] = {
@@ -354,6 +406,8 @@ export function collectOpenclawState(): StateSnapshot {
           const updated = session.updatedAt ?? 0
           if (updated > latestUpdatedAt) {
             latestUpdatedAt = updated
+            activeModel = session.model ?? null
+            activeProvider = session.modelProvider ?? null
             skills = (session.skillsSnapshot?.resolvedSkills ?? [])
               .filter((skill) => skill.name)
               .map((skill) => ({
@@ -373,6 +427,13 @@ export function collectOpenclawState(): StateSnapshot {
 
   return {
     openclaw: {
+      models: {
+        configured_primary: configuredPrimaryModel ?? null,
+        configured_fallbacks: configuredFallbackModels,
+        configured_models: configuredModels,
+        active_model: activeModel,
+        active_provider: activeProvider,
+      },
       plugins: {
         configured: configuredPlugins,
         enabled: enabledPlugins,

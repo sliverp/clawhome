@@ -37,3 +37,7 @@ class AgentInstallInfo(BaseModel):
 
 class AgentCommandRequest(BaseModel):
     cmd: str  # must match a key in agent's commands config
+
+
+class AgentModelSetRequest(BaseModel):
+    model_ref: str

@@ -46,6 +46,8 @@ export const agentsApi = {
     http.post<{ request_id: string; status: string }>(`/agents/${id}/command`, { cmd }),
   refresh: (id: number) =>
     http.post<{ request_id: string; status: string }>(`/agents/${id}/refresh`),
+  setModel: (id: number, modelRef: string) =>
+    http.post<{ request_id: string; status: string }>(`/agents/${id}/model`, { model_ref: modelRef }),
 }
 
 // ── Metrics ──────────────────────────────────────────────────────────────
@@ -73,7 +75,16 @@ export interface OpenClawSkillDetail {
   base_dir?: string
 }
 
+export interface OpenClawModelStatus {
+  configured_primary?: string | null
+  configured_fallbacks?: string[]
+  configured_models?: string[]
+  active_model?: string | null
+  active_provider?: string | null
+}
+
 export interface OpenClawMetadata {
+  models?: OpenClawModelStatus
   plugins?: {
     configured?: string[]
     enabled?: string[]

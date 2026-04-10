@@ -16,6 +16,7 @@ from app.schemas.agent import (
     AgentCommandRequest,
     AgentCreate,
     AgentInstallInfo,
+    AgentModelSetRequest,
     AgentOut,
     AgentRename,
 )
@@ -146,6 +147,31 @@ async def refresh_agent(
     sent = await ws_manager.send_to_agent(
         agent.id,
         {"type": "command", "data": {"cmd": "refresh", "request_id": request_id}},
+    )
+    if not sent:
+        raise HTTPException(status_code=503, detail="Agent is offline")
+    return {"request_id": request_id, "status": "sent"}
+
+
+@router.post("/{agent_id}/model")
+async def set_agent_model(
+    agent_id: int,
+    body: AgentModelSetRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    agent = _get_agent_or_404(agent_id, current_user.id, db)
+    request_id = uuid.uuid4().hex
+    sent = await ws_manager.send_to_agent(
+        agent.id,
+        {
+            "type": "command",
+            "data": {
+                "cmd": "set_model",
+                "request_id": request_id,
+                "args": {"model_ref": body.model_ref},
+            },
+        },
     )
     if not sent:
         raise HTTPException(status_code=503, detail="Agent is offline")

@@ -140,7 +140,8 @@ export class ClawHomeClient {
       case "command":
         void this.handleCommand(
           msg.data.cmd as string,
-          msg.data.request_id as string
+          msg.data.request_id as string,
+          msg.data.args as Record<string, unknown> | undefined
         );
         break;
 
@@ -152,7 +153,11 @@ export class ClawHomeClient {
 
   // ── Commands ──────────────────────────────────────────────────────────────
 
-  private async handleCommand(cmd: string, requestId: string): Promise<void> {
+  private async handleCommand(
+    cmd: string,
+    requestId: string,
+    args?: Record<string, unknown>
+  ): Promise<void> {
     if (cmd === "refresh") {
       try {
         await this.reportMetrics();
@@ -167,6 +172,25 @@ export class ClawHomeClient {
           data: { request_id: requestId, success: false, output },
         });
       }
+      return;
+    }
+
+    if (cmd === "set_model") {
+      const modelRef = typeof args?.model_ref === "string" ? args.model_ref.trim() : "";
+      if (!modelRef) {
+        this.send({
+          type: "command_result",
+          data: { request_id: requestId, success: false, output: "Missing model_ref" },
+        });
+        return;
+      }
+
+      console.log(`[clawhome] Setting OpenClaw model to ${modelRef}`);
+      const result = await executeCommand(`openclaw models set ${modelRef}`);
+      if (result.success) {
+        await this.reportMetrics();
+      }
+      this.send({ type: "command_result", data: { request_id: requestId, ...result } });
       return;
     }
 

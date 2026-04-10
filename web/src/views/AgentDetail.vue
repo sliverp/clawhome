@@ -88,6 +88,52 @@
             <div v-else class="status-empty">暂无数据</div>
           </div>
           <div class="status-card card">
+            <div class="status-card-title">模型管理</div>
+            <div class="model-block">
+              <div class="model-row">
+                <span class="model-label">当前配置</span>
+                <span class="model-value">{{ configuredPrimaryModel || '暂无数据' }}</span>
+              </div>
+              <div class="model-row">
+                <span class="model-label">当前会话</span>
+                <span class="model-value">{{ activeModelLabel || '暂无数据' }}</span>
+              </div>
+              <div class="model-row" v-if="configuredFallbackModels.length">
+                <span class="model-label">Fallback</span>
+                <div class="tag-list">
+                  <span v-for="model in configuredFallbackModels" :key="`fallback-${model}`" class="status-tag muted">{{ model }}</span>
+                </div>
+              </div>
+              <div class="model-actions">
+                <input
+                  v-model="modelRef"
+                  class="form-input model-input"
+                  placeholder="provider/model"
+                  @keyup.enter="setModel()"
+                />
+                <button
+                  class="btn btn-primary btn-sm"
+                  :disabled="agent.status !== 'online' || commandPending || !modelRef.trim()"
+                  @click="setModel()"
+                >
+                  切换模型
+                </button>
+              </div>
+              <div v-if="configuredModels.length" class="tag-list">
+                <button
+                  v-for="model in configuredModels"
+                  :key="`configured-model-${model}`"
+                  type="button"
+                  class="status-tag model-chip"
+                  :disabled="agent.status !== 'online' || commandPending"
+                  @click="setModel(model)"
+                >
+                  {{ model }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="status-card card">
             <div class="status-card-title">Skills</div>
             <div v-if="resolvedSkills.length" class="skill-list">
               <div v-for="skill in resolvedSkills" :key="skill.name" class="skill-row">
@@ -161,6 +207,7 @@ const agentId = Number(route.params.id)
 const agent = ref<Agent | null>(null)
 const renaming = ref(false)
 const newName = ref('')
+const modelRef = ref('')
 const commandPending = ref(false)
 const cmdFeedback = ref<{ success: boolean; message: string } | null>(null)
 const history = ref<Record<string, MetricPoint[]>>({})
@@ -168,9 +215,19 @@ const history = ref<Record<string, MetricPoint[]>>({})
 const latestMetrics = computed(() => agentsStore.latestMetrics[agentId])
 const definitions = computed(() => agentsStore.definitions)
 const openclawMeta = computed<OpenClawMetadata | null>(() => agent.value?.metadata_?.openclaw ?? null)
+const openclawModels = computed(() => openclawMeta.value?.models ?? null)
 const enabledPlugins = computed(() => openclawMeta.value?.plugins?.enabled ?? [])
 const configuredPlugins = computed(() => openclawMeta.value?.plugins?.configured ?? [])
 const resolvedSkills = computed(() => openclawMeta.value?.skills?.resolved ?? [])
+const configuredPrimaryModel = computed(() => openclawModels.value?.configured_primary ?? null)
+const configuredFallbackModels = computed(() => openclawModels.value?.configured_fallbacks ?? [])
+const configuredModels = computed(() => openclawModels.value?.configured_models ?? [])
+const activeModelLabel = computed(() => {
+  const provider = openclawModels.value?.active_provider
+  const model = openclawModels.value?.active_model
+  if (!model) return null
+  return provider ? `${provider}/${model}` : model
+})
 const channelRows = computed(() => {
   const details = openclawMeta.value?.channels?.details ?? {}
   return Object.entries(details).map(([name, detail]) => ({
@@ -250,9 +307,34 @@ async function refreshAgent() {
       await agentsStore.fetchLatest(agentId)
       const res = await agentsApi.get(agentId)
       agent.value = res.data
+      modelRef.value = res.data.metadata_?.openclaw?.models?.configured_primary ?? modelRef.value
     }, 1500)
   } catch {
     cmdFeedback.value = { success: false, message: '刷新命令发送失败，请检查 Agent 连接状态' }
+  } finally {
+    commandPending.value = false
+    setTimeout(() => (cmdFeedback.value = null), 5000)
+  }
+}
+
+async function setModel(target?: string) {
+  const nextModel = (target ?? modelRef.value).trim()
+  if (!nextModel) return
+
+  commandPending.value = true
+  cmdFeedback.value = null
+  try {
+    await agentsApi.setModel(agentId, nextModel)
+    cmdFeedback.value = { success: true, message: `已发送模型切换命令：${nextModel}` }
+    modelRef.value = nextModel
+    setTimeout(async () => {
+      await agentsStore.fetchLatest(agentId)
+      const res = await agentsApi.get(agentId)
+      agent.value = res.data
+      modelRef.value = res.data.metadata_?.openclaw?.models?.configured_primary ?? nextModel
+    }, 2000)
+  } catch {
+    cmdFeedback.value = { success: false, message: '模型切换命令发送失败，请检查 Agent 连接状态' }
   } finally {
     commandPending.value = false
     setTimeout(() => (cmdFeedback.value = null), 5000)
@@ -296,6 +378,7 @@ async function loadHistory() {
 onMounted(async () => {
   const res = await agentsApi.get(agentId)
   agent.value = res.data
+  modelRef.value = res.data.metadata_?.openclaw?.models?.configured_primary ?? ''
   await agentsStore.fetchDefinitions(agent.value.agent_type)
   await agentsStore.fetchLatest(agentId)
   await loadHistory()
@@ -375,6 +458,20 @@ onUnmounted(() => agentsStore.disconnectWS())
   color: #94a3b8;
 }
 .status-empty { color: #64748b; font-size: 13px; }
+.model-block { display: flex; flex-direction: column; gap: 14px; }
+.model-row { display: flex; flex-direction: column; gap: 6px; }
+.model-label { font-size: 12px; color: #94a3b8; }
+.model-value { font-size: 14px; color: #e2e8f0; word-break: break-all; }
+.model-actions { display: flex; gap: 10px; align-items: center; }
+.model-input { flex: 1; min-width: 0; }
+.model-chip {
+  border: 0;
+  cursor: pointer;
+}
+.model-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
 .channel-list { display: flex; flex-direction: column; gap: 12px; }
 .channel-row {
   background: #0f1117;

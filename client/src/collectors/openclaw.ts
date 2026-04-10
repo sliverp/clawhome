@@ -12,8 +12,13 @@ interface Usage {
   cost?: { input?: number; output?: number }
 }
 
+interface MessageContentEntry {
+  type?: string
+}
+
 interface MessageEntry {
   type: string
+  isError?: boolean
   message?: {
     role?: string
     model?: string
@@ -21,6 +26,7 @@ interface MessageEntry {
     usage?: Usage
     stopReason?: string
     isError?: boolean
+    content?: MessageContentEntry[]
   }
 }
 
@@ -56,6 +62,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   // ── Aggregated totals across all sessions ──────────────────────────────
   let totalInputTokens = 0
   let totalOutputTokens = 0
+  let totalTokens = 0
   let totalCacheRead = 0
   let totalCacheWrite = 0
   let totalCost = 0
@@ -74,8 +81,6 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   let conversationCount = 0   // user turns
   let assistantTurns = 0
   let toolCallCount = 0
-  let stopReasonErrors = 0
-
   let agentDirs: string[] = []
   try {
     agentDirs = fs.readdirSync(agentsDir).map((d) => path.join(agentsDir, d))
@@ -96,6 +101,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
       for (const session of Object.values(idx)) {
         totalInputTokens += session.inputTokens ?? 0
         totalOutputTokens += session.outputTokens ?? 0
+        totalTokens += session.totalTokens ?? ((session.inputTokens ?? 0) + (session.outputTokens ?? 0))
         totalCacheRead += session.cacheRead ?? 0
         totalCacheWrite += session.cacheWrite ?? 0
         totalCost += session.estimatedCostUsd ?? 0
@@ -129,13 +135,14 @@ export function collectOpenclawMetrics(): MetricSnapshot {
           const entry = JSON.parse(line) as MessageEntry
           if (entry.type !== 'message' || !entry.message) continue
 
-          const { role, usage, isError, stopReason } = entry.message
+          const { role, isError, stopReason, content } = entry.message
 
           if (role === 'user') conversationCount++
           if (role === 'assistant') assistantTurns++
-          if (role === 'toolResult') toolCallCount++
-          if (isError) errorCount++
-          if (stopReason === 'error') stopReasonErrors++
+          if (role === 'assistant') {
+            toolCallCount += (content ?? []).filter((item) => item.type === 'toolCall').length
+          }
+          if (entry.isError || isError || stopReason === 'error') errorCount++
 
           // Message-level usage only used if sessions.json missing (fallback)
         }
@@ -148,7 +155,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   // Token metrics
   snapshot['token_input'] = totalInputTokens
   snapshot['token_output'] = totalOutputTokens
-  snapshot['token_total'] = totalInputTokens + totalOutputTokens
+  snapshot['token_total'] = totalTokens
   snapshot['token_cache_read'] = totalCacheRead
   snapshot['token_cache_write'] = totalCacheWrite
   snapshot['token_fresh'] = totalInputTokens - totalCacheRead  // non-cached input

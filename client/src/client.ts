@@ -153,6 +153,23 @@ export class ClawHomeClient {
   // ── Commands ──────────────────────────────────────────────────────────────
 
   private async handleCommand(cmd: string, requestId: string): Promise<void> {
+    if (cmd === "refresh") {
+      try {
+        await this.reportMetrics();
+        this.send({
+          type: "command_result",
+          data: { request_id: requestId, success: true, output: "Metrics and state refreshed" },
+        });
+      } catch (error) {
+        const output = error instanceof Error ? error.message : String(error);
+        this.send({
+          type: "command_result",
+          data: { request_id: requestId, success: false, output },
+        });
+      }
+      return;
+    }
+
     const commandStr = this.agentConfig.commands[cmd];
     if (!commandStr) {
       this.send({

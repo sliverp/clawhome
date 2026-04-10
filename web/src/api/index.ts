@@ -44,6 +44,8 @@ export const agentsApi = {
   delete: (id: number) => http.delete(`/agents/${id}`),
   sendCommand: (id: number, cmd: string) =>
     http.post<{ request_id: string; status: string }>(`/agents/${id}/command`, { cmd }),
+  refresh: (id: number) =>
+    http.post<{ request_id: string; status: string }>(`/agents/${id}/refresh`),
 }
 
 // ── Metrics ──────────────────────────────────────────────────────────────

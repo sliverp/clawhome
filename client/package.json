@@ -1,6 +1,6 @@
 {
   "name": "clawhome-client",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "ClawHome Agent Monitor - Client",
   "type": "module",
   "main": "dist/index.js",

@@ -35,6 +35,13 @@
         <!-- Action buttons -->
         <div class="header-actions">
           <button
+            class="btn btn-ghost btn-sm"
+            :disabled="agent.status !== 'online' || commandPending"
+            @click="refreshAgent"
+          >
+            立即刷新
+          </button>
+          <button
             v-for="cmd in availableCommands"
             :key="cmd"
             class="btn btn-ghost btn-sm"
@@ -160,6 +167,25 @@ async function sendCommand(cmd: string) {
     cmdFeedback.value = { success: true, message: `已发送「${cmdLabel(cmd)}」命令，等待执行结果…` }
   } catch {
     cmdFeedback.value = { success: false, message: '命令发送失败，请检查 Agent 连接状态' }
+  } finally {
+    commandPending.value = false
+    setTimeout(() => (cmdFeedback.value = null), 5000)
+  }
+}
+
+async function refreshAgent() {
+  commandPending.value = true
+  cmdFeedback.value = null
+  try {
+    await agentsApi.refresh(agentId)
+    cmdFeedback.value = { success: true, message: '已发送刷新命令，正在请求 Agent 立即上报…' }
+    setTimeout(async () => {
+      await agentsStore.fetchLatest(agentId)
+      const res = await agentsApi.get(agentId)
+      agent.value = res.data
+    }, 1500)
+  } catch {
+    cmdFeedback.value = { success: false, message: '刷新命令发送失败，请检查 Agent 连接状态' }
   } finally {
     commandPending.value = false
     setTimeout(() => (cmdFeedback.value = null), 5000)

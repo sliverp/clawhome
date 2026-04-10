@@ -49,6 +49,17 @@ interface SessionEntry {
   endedAt?: number
   runtimeMs?: number
   updatedAt?: number
+  skillsSnapshot?: {
+    resolvedSkills?: ResolvedSkill[]
+  }
+}
+
+interface ResolvedSkill {
+  name?: string
+  description?: string
+  filePath?: string
+  source?: string
+  baseDir?: string
 }
 
 interface OpenclawConfig {
@@ -62,6 +73,14 @@ interface ChannelDetail {
   enabled: boolean
   started: boolean
   message_count: number
+}
+
+interface SkillDetail {
+  name: string
+  description?: string
+  file_path?: string
+  source?: string
+  base_dir?: string
 }
 
 function normalizeMetricKey(value: string): string {
@@ -182,6 +201,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   let latestProvider = ''
   let latestContextTokens = 0
   let latestUpdatedAt = 0
+  let latestResolvedSkills: ResolvedSkill[] = []
 
   // Message-level counts
   let conversationCount = 0   // user turns
@@ -221,6 +241,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
           latestModel = session.model ?? ''
           latestProvider = session.modelProvider ?? ''
           latestContextTokens = session.contextTokens ?? 0
+          latestResolvedSkills = session.skillsSnapshot?.resolvedSkills ?? []
         }
       }
     } catch { /* skip */ }
@@ -288,6 +309,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   }
 
   snapshot['plugin_count'] = enabledPlugins.length
+  snapshot['skill_count'] = latestResolvedSkills.length
   snapshot['channel_count'] = enabledChannels.length
   snapshot['channel_started_count'] = startedChannels.length
   for (const pluginName of enabledPlugins) {
@@ -310,6 +332,8 @@ export function collectOpenclawState(): StateSnapshot {
   const { configuredPlugins, enabledPlugins, configuredChannels, enabledChannels } = collectConfiguredState()
   const { startedChannels, channelMessageCounts } = collectChannelEvidence(enabledChannels)
   const details: Record<string, ChannelDetail> = {}
+  let latestUpdatedAt = 0
+  let skills: SkillDetail[] = []
 
   for (const channelName of configuredChannels) {
     details[channelName] = {
@@ -319,11 +343,42 @@ export function collectOpenclawState(): StateSnapshot {
     }
   }
 
+  const agentsDir = path.join(os.homedir(), '.openclaw', 'agents')
+  if (fs.existsSync(agentsDir)) {
+    for (const agentName of fs.readdirSync(agentsDir)) {
+      const sessionsIndex = path.join(agentsDir, agentName, 'sessions', 'sessions.json')
+      if (!fs.existsSync(sessionsIndex)) continue
+      try {
+        const idx = JSON.parse(fs.readFileSync(sessionsIndex, 'utf-8')) as Record<string, SessionEntry>
+        for (const session of Object.values(idx)) {
+          const updated = session.updatedAt ?? 0
+          if (updated > latestUpdatedAt) {
+            latestUpdatedAt = updated
+            skills = (session.skillsSnapshot?.resolvedSkills ?? [])
+              .filter((skill) => skill.name)
+              .map((skill) => ({
+                name: skill.name!,
+                description: skill.description,
+                file_path: skill.filePath,
+                source: skill.source,
+                base_dir: skill.baseDir,
+              }))
+          }
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+
   return {
     openclaw: {
       plugins: {
         configured: configuredPlugins,
         enabled: enabledPlugins,
+      },
+      skills: {
+        resolved: skills,
       },
       channels: {
         configured: configuredChannels,

@@ -88,6 +88,20 @@
             <div v-else class="status-empty">暂无数据</div>
           </div>
           <div class="status-card card">
+            <div class="status-card-title">Skills</div>
+            <div v-if="resolvedSkills.length" class="skill-list">
+              <div v-for="skill in resolvedSkills" :key="skill.name" class="skill-row">
+                <div class="skill-head">
+                  <span class="channel-name">{{ skill.name }}</span>
+                  <span v-if="skill.source" class="status-tag muted">{{ skill.source }}</span>
+                </div>
+                <div v-if="skill.description" class="skill-desc">{{ skill.description }}</div>
+                <div v-if="skill.file_path" class="skill-path">{{ skill.file_path }}</div>
+              </div>
+            </div>
+            <div v-else class="status-empty">暂无数据</div>
+          </div>
+          <div class="status-card card">
             <div class="status-card-title">Channel 状态</div>
             <div v-if="channelRows.length" class="channel-list">
               <div v-for="channel in channelRows" :key="channel.name" class="channel-row">
@@ -156,6 +170,7 @@ const definitions = computed(() => agentsStore.definitions)
 const openclawMeta = computed<OpenClawMetadata | null>(() => agent.value?.metadata_?.openclaw ?? null)
 const enabledPlugins = computed(() => openclawMeta.value?.plugins?.enabled ?? [])
 const configuredPlugins = computed(() => openclawMeta.value?.plugins?.configured ?? [])
+const resolvedSkills = computed(() => openclawMeta.value?.skills?.resolved ?? [])
 const channelRows = computed(() => {
   const details = openclawMeta.value?.channels?.details ?? {}
   return Object.entries(details).map(([name, detail]) => ({
@@ -376,6 +391,31 @@ onUnmounted(() => agentsStore.disconnectWS())
 }
 .channel-name { font-size: 14px; font-weight: 600; }
 .channel-count { font-size: 12px; color: #94a3b8; }
+.skill-list { display: flex; flex-direction: column; gap: 12px; }
+.skill-row {
+  background: #0f1117;
+  border: 1px solid #2d3148;
+  border-radius: 10px;
+  padding: 12px;
+}
+.skill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.skill-desc {
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+.skill-path {
+  font-size: 11px;
+  color: #64748b;
+  word-break: break-all;
+}
 
 .section-title { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }

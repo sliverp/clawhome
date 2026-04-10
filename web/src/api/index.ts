@@ -65,10 +65,21 @@ export interface OpenClawChannelDetail {
   message_count: number
 }
 
+export interface OpenClawSkillDetail {
+  name: string
+  description?: string
+  file_path?: string
+  source?: string
+  base_dir?: string
+}
+
 export interface OpenClawMetadata {
   plugins?: {
     configured?: string[]
     enabled?: string[]
+  }
+  skills?: {
+    resolved?: OpenClawSkillDetail[]
   }
   channels?: {
     configured?: string[]

@@ -28,7 +28,7 @@ const program = new Command();
 program
   .name("clawhome-client")
   .description("ClawHome Agent Monitor Client")
-  .version("0.1.7");
+  .version("0.1.8");
 
 // ── init command ──────────────────────────────────────────────────────────
 

@@ -4,9 +4,9 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { MetricsConfig, MetricSourceConfig } from "../config.js";
-import { MetricSnapshot } from "./base.js";
+import { MetricSnapshot, StateSnapshot } from "./base.js";
 import { collectSystemMetrics } from "./system.js";
-import { collectOpenclawMetrics } from "./openclaw.js";
+import { collectOpenclawMetrics, collectOpenclawState } from "./openclaw.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -79,6 +79,10 @@ const NATIVE_COLLECTORS: Record<string, () => MetricSnapshot> = {
   openclaw: collectOpenclawMetrics,
 }
 
+const NATIVE_STATE_COLLECTORS: Record<string, () => StateSnapshot> = {
+  openclaw: collectOpenclawState,
+}
+
 export async function collectCustomMetrics(metricsConfig: MetricsConfig, agentType?: string): Promise<MetricSnapshot> {
   const systemMetrics = await collectSystemMetrics();
   const snapshot: MetricSnapshot = { ...systemMetrics };
@@ -114,4 +118,19 @@ export async function collectCustomMetrics(metricsConfig: MetricsConfig, agentTy
   );
 
   return snapshot;
+}
+
+export function collectCustomState(agentType?: string): StateSnapshot {
+  const nativeCollector =
+    (agentType && NATIVE_STATE_COLLECTORS[agentType]) ||
+    (fs.existsSync(path.join(os.homedir(), '.openclaw')) ? collectOpenclawState : null);
+
+  if (!nativeCollector) return {};
+
+  try {
+    return nativeCollector();
+  } catch (e) {
+    console.error('[clawhome] Native state collector error:', e);
+    return {};
+  }
 }

@@ -186,6 +186,27 @@ async def agent_ws(websocket: WebSocket):
 
                 await ws_manager.broadcast_agent_metrics(agent.user_id, agent.id, data)
 
+            # ── agent_state ──────────────────────────────────────────────────
+            elif msg_type == "agent_state":
+                if agent is None:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "data": {"code": "not_authenticated", "message": "Not authenticated"},
+                    }))
+                    continue
+                if not isinstance(data, dict):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "data": {"code": "invalid_state", "message": "State payload must be an object"},
+                    }))
+                    continue
+
+                metadata = agent.metadata_ if isinstance(agent.metadata_, dict) else {}
+                metadata.update(data)
+                agent.metadata_ = metadata
+                agent.last_seen = datetime.now(timezone.utc)
+                db.commit()
+
             # ── command_result ───────────────────────────────────────────────
             elif msg_type == "command_result":
                 logger.info("Command result from agent %s: %s", agent.id if agent else "?", data)

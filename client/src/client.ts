@@ -1,8 +1,9 @@
 import WebSocket from "ws";
 import { AgentConfig, InstanceConfig } from "./config.js";
-import { collectCustomMetrics } from "./collectors/custom.js";
+import { collectCustomMetrics, collectCustomState } from "./collectors/custom.js";
 import { executeCommand } from "./executor.js";
 import { saveInstanceConfig } from "./storage.js";
+import { StateSnapshot } from "./collectors/base.js";
 
 const HEARTBEAT_INTERVAL_MS = 20_000;   // send ping every 20s
 const PONG_TIMEOUT_MS = 10_000;         // force reconnect if no pong within 10s
@@ -194,6 +195,10 @@ export class ClawHomeClient {
     try {
       const metrics = await this.collectMetrics();
       this.send({ type: "metrics", data: metrics });
+      const state = this.collectState();
+      if (Object.keys(state).length > 0) {
+        this.send({ type: "agent_state", data: state });
+      }
     } catch (err) {
       console.error("[clawhome] Failed to collect metrics:", err);
     }
@@ -202,6 +207,10 @@ export class ClawHomeClient {
   // Subclasses may override to inject additional metrics (e.g. from local API)
   protected async collectMetrics(): Promise<Record<string, number>> {
     return collectCustomMetrics(this.agentConfig.metrics, this.instanceConfig.agentType);
+  }
+
+  protected collectState(): StateSnapshot {
+    return collectCustomState(this.instanceConfig.agentType);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

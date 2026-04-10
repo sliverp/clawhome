@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { MetricSnapshot } from './base.js'
+import { MetricSnapshot, StateSnapshot } from './base.js'
 
 interface Usage {
   input?: number
@@ -14,6 +14,7 @@ interface Usage {
 
 interface MessageContentEntry {
   type?: string
+  text?: string
 }
 
 interface MessageEntry {
@@ -50,6 +51,109 @@ interface SessionEntry {
   updatedAt?: number
 }
 
+interface OpenclawConfig {
+  plugins?: {
+    entries?: Record<string, { enabled?: boolean }>
+  }
+  channels?: Record<string, { enabled?: boolean }>
+}
+
+interface ChannelDetail {
+  enabled: boolean
+  started: boolean
+  message_count: number
+}
+
+function normalizeMetricKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function countJsonlLines(filePath: string): number {
+  try {
+    return fs.readFileSync(filePath, 'utf-8').split('\n').filter((line) => line.trim()).length
+  } catch {
+    return 0
+  }
+}
+
+function collectConfiguredState() {
+  const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json')
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as OpenclawConfig
+    const configuredPlugins = Object.keys(config.plugins?.entries ?? {})
+    const enabledPlugins = configuredPlugins.filter((name) => config.plugins?.entries?.[name]?.enabled !== false)
+    const configuredChannels = Object.keys(config.channels ?? {})
+    const enabledChannels = configuredChannels.filter((name) => config.channels?.[name]?.enabled !== false)
+
+    return {
+      configuredPlugins,
+      enabledPlugins,
+      configuredChannels,
+      enabledChannels,
+    }
+  } catch {
+    return {
+      configuredPlugins: [] as string[],
+      enabledPlugins: [] as string[],
+      configuredChannels: [] as string[],
+      enabledChannels: [] as string[],
+    }
+  }
+}
+
+function collectChannelEvidence(enabledChannels: string[]) {
+  const startedChannels = new Set<string>()
+  const channelMessageCounts: Record<string, number> = {}
+
+  const qqbotSession = path.join(os.homedir(), '.openclaw', 'qqbot', 'sessions', 'session-default.json')
+  if (enabledChannels.includes('qqbot') && fs.existsSync(qqbotSession)) {
+    startedChannels.add('qqbot')
+  }
+
+  const qqbotRefIndex = path.join(os.homedir(), '.openclaw', 'qqbot', 'data', 'ref-index.jsonl')
+  if (enabledChannels.includes('qqbot') && fs.existsSync(qqbotRefIndex)) {
+    channelMessageCounts.qqbot = countJsonlLines(qqbotRefIndex)
+  }
+
+  const fallbackMessageCounts: Record<string, number> = {}
+  const agentsDir = path.join(os.homedir(), '.openclaw', 'agents')
+  if (fs.existsSync(agentsDir)) {
+    for (const agentName of fs.readdirSync(agentsDir)) {
+      const sessionsDir = path.join(agentsDir, agentName, 'sessions')
+      if (!fs.existsSync(sessionsDir)) continue
+      for (const fileName of fs.readdirSync(sessionsDir).filter((name) => name.endsWith('.jsonl'))) {
+        const filePath = path.join(sessionsDir, fileName)
+        try {
+          const lines = fs.readFileSync(filePath, 'utf-8').split('\n')
+          for (const line of lines) {
+            if (!line.trim()) continue
+            const entry = JSON.parse(line) as MessageEntry
+            const content = entry.message?.content ?? []
+            for (const item of content) {
+              if (item.type !== 'text' || !item.text) continue
+              const match = item.text.match(/\[([^\]]+)\]\s+to=([a-z0-9_-]+):/i)
+              if (!match) continue
+              const channelKey = normalizeMetricKey(match[2])
+              fallbackMessageCounts[channelKey] = (fallbackMessageCounts[channelKey] ?? 0) + 1
+              startedChannels.add(channelKey)
+            }
+          }
+        } catch {
+          continue
+        }
+      }
+    }
+  }
+
+  for (const channelName of enabledChannels) {
+    if (!(channelName in channelMessageCounts) && fallbackMessageCounts[channelName] !== undefined) {
+      channelMessageCounts[channelName] = fallbackMessageCounts[channelName]
+    }
+  }
+
+  return { startedChannels: Array.from(startedChannels), channelMessageCounts }
+}
+
 /**
  * Collect all available openclaw metrics by parsing:
  * - ~/.openclaw/agents/<agent>/sessions/sessions.json  (per-session summary)
@@ -58,6 +162,8 @@ interface SessionEntry {
 export function collectOpenclawMetrics(): MetricSnapshot {
   const agentsDir = path.join(os.homedir(), '.openclaw', 'agents')
   if (!fs.existsSync(agentsDir)) return {}
+  const { enabledPlugins, enabledChannels } = collectConfiguredState()
+  const { startedChannels, channelMessageCounts } = collectChannelEvidence(enabledChannels)
 
   // ── Aggregated totals across all sessions ──────────────────────────────
   let totalInputTokens = 0
@@ -181,5 +287,51 @@ export function collectOpenclawMetrics(): MetricSnapshot {
     snapshot['cache_hit_pct'] = Math.round((totalCacheRead / Math.max(totalInputTokens, 1)) * 100 * 10) / 10
   }
 
+  snapshot['plugin_count'] = enabledPlugins.length
+  snapshot['channel_count'] = enabledChannels.length
+  snapshot['channel_started_count'] = startedChannels.length
+  for (const pluginName of enabledPlugins) {
+    snapshot[`plugin_enabled_${normalizeMetricKey(pluginName)}`] = 1
+  }
+  for (const channelName of enabledChannels) {
+    snapshot[`channel_enabled_${normalizeMetricKey(channelName)}`] = 1
+  }
+  for (const channelName of startedChannels) {
+    snapshot[`channel_started_${normalizeMetricKey(channelName)}`] = 1
+  }
+  for (const [channelName, count] of Object.entries(channelMessageCounts)) {
+    snapshot[`channel_message_count_${normalizeMetricKey(channelName)}`] = count
+  }
+
   return snapshot
+}
+
+export function collectOpenclawState(): StateSnapshot {
+  const { configuredPlugins, enabledPlugins, configuredChannels, enabledChannels } = collectConfiguredState()
+  const { startedChannels, channelMessageCounts } = collectChannelEvidence(enabledChannels)
+  const details: Record<string, ChannelDetail> = {}
+
+  for (const channelName of configuredChannels) {
+    details[channelName] = {
+      enabled: enabledChannels.includes(channelName),
+      started: startedChannels.includes(channelName),
+      message_count: channelMessageCounts[channelName] ?? 0,
+    }
+  }
+
+  return {
+    openclaw: {
+      plugins: {
+        configured: configuredPlugins,
+        enabled: enabledPlugins,
+      },
+      channels: {
+        configured: configuredChannels,
+        enabled: enabledChannels,
+        started: startedChannels,
+        message_counts: channelMessageCounts,
+        details,
+      },
+    },
+  }
 }

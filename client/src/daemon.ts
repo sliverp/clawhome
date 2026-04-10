@@ -29,13 +29,15 @@ function trySystemd(instanceId: string, startCmd: string): boolean {
 
   const unit = `[Unit]
 Description=ClawHome Agent Client (${instanceId})
-After=network.target
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStart=${startCmd}
-Restart=on-failure
+Restart=always
 RestartSec=5
+StartLimitIntervalSec=0
 
 [Install]
 WantedBy=default.target

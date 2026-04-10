@@ -4,13 +4,15 @@ import { collectCustomMetrics } from "./collectors/custom.js";
 import { executeCommand } from "./executor.js";
 import { saveInstanceConfig } from "./storage.js";
 
-const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 20_000;   // send ping every 20s
+const PONG_TIMEOUT_MS = 10_000;         // force reconnect if no pong within 10s
 const RECONNECT_BASE_MS = 2_000;
-const RECONNECT_MAX_MS = 60_000;
+const RECONNECT_MAX_MS = 30_000;        // cap at 30s (was 60s)
 
 export class ClawHomeClient {
   private ws: WebSocket | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private pongTimer: NodeJS.Timeout | null = null;
   private reportTimer: NodeJS.Timeout | null = null;
   private reconnectDelay = RECONNECT_BASE_MS;
   private stopping = false;
@@ -57,6 +59,7 @@ export class ClawHomeClient {
     });
 
     this.ws.on("error", (err) => {
+      // error is always followed by close, so reconnect is handled there
       console.error("[clawhome] WebSocket error:", err.message);
     });
   }
@@ -67,6 +70,13 @@ export class ClawHomeClient {
       if (!this.stopping) this.connect();
     }, this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_MAX_MS);
+  }
+
+  private forceReconnect(reason: string): void {
+    console.warn(`[clawhome] Force reconnect: ${reason}`);
+    this.clearTimers();
+    this.authenticated = false;
+    this.ws?.terminate(); // hard close, triggers 'close' event → scheduleReconnect
   }
 
   private authenticate(): void {
@@ -106,7 +116,6 @@ export class ClawHomeClient {
       case "bind_ok": {
         const accessToken = msg.data.access_token as string;
         console.log(`[clawhome] Bound successfully. Agent ID: ${msg.data.agent_id}`);
-        // Persist access_token and clear bind_token
         this.instanceConfig.accessToken = accessToken;
         this.instanceConfig.bindToken = null;
         saveInstanceConfig(this.instanceConfig.instanceId, this.instanceConfig);
@@ -116,7 +125,11 @@ export class ClawHomeClient {
       }
 
       case "pong":
-        // heartbeat acknowledged
+        // Clear the pong timeout — connection is alive
+        if (this.pongTimer) {
+          clearTimeout(this.pongTimer);
+          this.pongTimer = null;
+        }
         break;
 
       case "command":
@@ -149,11 +162,18 @@ export class ClawHomeClient {
     this.send({ type: "command_result", data: { request_id: requestId, ...result } });
   }
 
-  // ── Heartbeat ─────────────────────────────────────────────────────────────
+  // ── Heartbeat (with pong timeout detection) ───────────────────────────────
 
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) return;
+
       this.send({ type: "ping", data: { ts: Date.now() } });
+
+      // Expect a pong back within PONG_TIMEOUT_MS
+      this.pongTimer = setTimeout(() => {
+        this.forceReconnect("pong timeout — server not responding");
+      }, PONG_TIMEOUT_MS);
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -191,7 +211,9 @@ export class ClawHomeClient {
   private clearTimers(): void {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.reportTimer) clearInterval(this.reportTimer);
+    if (this.pongTimer) clearTimeout(this.pongTimer);
     this.heartbeatTimer = null;
     this.reportTimer = null;
+    this.pongTimer = null;
   }
 }

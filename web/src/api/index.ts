@@ -59,6 +59,26 @@ export const metricsApi = {
 }
 
 // ── Types ────────────────────────────────────────────────────────────────
+export interface OpenClawChannelDetail {
+  enabled: boolean
+  started: boolean
+  message_count: number
+}
+
+export interface OpenClawMetadata {
+  plugins?: {
+    configured?: string[]
+    enabled?: string[]
+  }
+  channels?: {
+    configured?: string[]
+    enabled?: string[]
+    started?: string[]
+    message_counts?: Record<string, number>
+    details?: Record<string, OpenClawChannelDetail>
+  }
+}
+
 export interface Agent {
   id: number
   instance_id: string
@@ -68,6 +88,9 @@ export interface Agent {
   status: 'offline' | 'online' | 'error'
   last_seen: string | null
   local_port: number | null
+  metadata_?: {
+    openclaw?: OpenClawMetadata
+  } | null
   created_at: string
   install_url: string | null
 }

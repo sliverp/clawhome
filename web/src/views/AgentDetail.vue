@@ -70,6 +70,46 @@
         </div>
       </div>
 
+      <section v-if="openclawMeta" class="status-section">
+        <h2 class="section-title">OpenClaw 状态</h2>
+        <div class="status-grid">
+          <div class="status-card card">
+            <div class="status-card-title">已启用插件</div>
+            <div v-if="enabledPlugins.length" class="tag-list">
+              <span v-for="plugin in enabledPlugins" :key="`enabled-plugin-${plugin}`" class="status-tag">{{ plugin }}</span>
+            </div>
+            <div v-else class="status-empty">暂无数据</div>
+          </div>
+          <div class="status-card card">
+            <div class="status-card-title">已配置插件</div>
+            <div v-if="configuredPlugins.length" class="tag-list">
+              <span v-for="plugin in configuredPlugins" :key="`configured-plugin-${plugin}`" class="status-tag muted">{{ plugin }}</span>
+            </div>
+            <div v-else class="status-empty">暂无数据</div>
+          </div>
+          <div class="status-card card">
+            <div class="status-card-title">Channel 状态</div>
+            <div v-if="channelRows.length" class="channel-list">
+              <div v-for="channel in channelRows" :key="channel.name" class="channel-row">
+                <div class="channel-head">
+                  <span class="channel-name">{{ channel.name }}</span>
+                  <span class="channel-count">{{ channel.messageCount }} 次</span>
+                </div>
+                <div class="tag-list">
+                  <span class="status-tag" :class="channel.enabled ? 'ok' : 'muted'">
+                    {{ channel.enabled ? '已启用' : '未启用' }}
+                  </span>
+                  <span class="status-tag" :class="channel.started ? 'ok' : 'muted'">
+                    {{ channel.started ? '已启动' : '未启动' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="status-empty">暂无数据</div>
+          </div>
+        </div>
+      </section>
+
       <!-- Charts -->
       <div class="charts-section" v-if="shownDefinitions.length">
         <h2 class="section-title">历史趋势</h2>
@@ -96,7 +136,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents.js'
-import { agentsApi, metricsApi, type Agent, type MetricDefinition, type MetricPoint } from '../api/index.js'
+import { agentsApi, metricsApi, type Agent, type MetricDefinition, type MetricPoint, type OpenClawMetadata } from '../api/index.js'
 import MetricChart from '../components/MetricChart.vue'
 
 const route = useRoute()
@@ -113,6 +153,18 @@ const history = ref<Record<string, MetricPoint[]>>({})
 
 const latestMetrics = computed(() => agentsStore.latestMetrics[agentId])
 const definitions = computed(() => agentsStore.definitions)
+const openclawMeta = computed<OpenClawMetadata | null>(() => agent.value?.metadata_?.openclaw ?? null)
+const enabledPlugins = computed(() => openclawMeta.value?.plugins?.enabled ?? [])
+const configuredPlugins = computed(() => openclawMeta.value?.plugins?.configured ?? [])
+const channelRows = computed(() => {
+  const details = openclawMeta.value?.channels?.details ?? {}
+  return Object.entries(details).map(([name, detail]) => ({
+    name,
+    enabled: detail.enabled,
+    started: detail.started,
+    messageCount: detail.message_count,
+  }))
+})
 
 const COLORS: Record<string, string> = {
   cpu_percent: '#6366f1',
@@ -283,6 +335,47 @@ onUnmounted(() => agentsStore.disconnectWS())
 .metric-card-label { font-size: 12px; color: #64748b; margin-bottom: 10px; }
 .metric-card-value { font-size: 28px; font-weight: 700; }
 .metric-card-unit { font-size: 14px; color: #94a3b8; margin-left: 3px; }
+
+.status-section { margin-bottom: 32px; }
+.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.status-card { padding: 20px; }
+.status-card-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #1e2235;
+  border: 1px solid #2d3148;
+  color: #dbe4ff;
+  font-size: 12px;
+}
+.status-tag.ok {
+  background: #113126;
+  border-color: #166534;
+  color: #86efac;
+}
+.status-tag.muted {
+  color: #94a3b8;
+}
+.status-empty { color: #64748b; font-size: 13px; }
+.channel-list { display: flex; flex-direction: column; gap: 12px; }
+.channel-row {
+  background: #0f1117;
+  border: 1px solid #2d3148;
+  border-radius: 10px;
+  padding: 12px;
+}
+.channel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+.channel-name { font-size: 14px; font-weight: 600; }
+.channel-count { font-size: 12px; color: #94a3b8; }
 
 .section-title { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }

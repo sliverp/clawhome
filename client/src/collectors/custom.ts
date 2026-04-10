@@ -1,4 +1,6 @@
 import fs from "fs";
+import os from "os";
+import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { MetricsConfig, MetricSourceConfig } from "../config.js";
@@ -81,10 +83,18 @@ export async function collectCustomMetrics(metricsConfig: MetricsConfig, agentTy
   const systemMetrics = await collectSystemMetrics();
   const snapshot: MetricSnapshot = { ...systemMetrics };
 
-  // Run native collector for known agent types (reads data files directly)
-  if (agentType && NATIVE_COLLECTORS[agentType]) {
-    const nativeMetrics = NATIVE_COLLECTORS[agentType]()
-    Object.assign(snapshot, nativeMetrics)
+  // Run native collector. If agentType is known use it directly;
+  // otherwise fall back to openclaw if ~/.openclaw directory exists.
+  const nativeCollector =
+    (agentType && NATIVE_COLLECTORS[agentType]) ||
+    (fs.existsSync(path.join(os.homedir(), '.openclaw')) ? collectOpenclawMetrics : null);
+
+  if (nativeCollector) {
+    try {
+      Object.assign(snapshot, nativeCollector());
+    } catch (e) {
+      console.error('[clawhome] Native collector error:', e);
+    }
   }
 
   // Then run any additional metrics defined in config (file/command/api sources)

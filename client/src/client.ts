@@ -132,6 +132,10 @@ export class ClawHomeClient {
         }
         break;
 
+      case "ping":
+        this.send({ type: "pong", data: { ts: msg.data.ts ?? Date.now() } });
+        break;
+
       case "command":
         void this.handleCommand(
           msg.data.cmd as string,

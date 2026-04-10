@@ -4,11 +4,13 @@ WebSocket endpoints:
 - /ws/dashboard : browser connections (auth via JWT in query param)
 """
 
+import asyncio
 import json
 import logging
 import secrets
 import uuid
 from datetime import datetime, timezone
+from time import monotonic
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
@@ -22,6 +24,9 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["websocket"])
+
+SERVER_PING_INTERVAL_SECONDS = 20
+CLIENT_PONG_TIMEOUT_SECONDS = 45
 
 
 def _get_db() -> Session:
@@ -40,6 +45,32 @@ async def agent_ws(websocket: WebSocket):
     await websocket.accept()
     db = SessionLocal()
     agent: Agent | None = None
+    last_client_pong = monotonic()
+    server_ping_task: asyncio.Task[None] | None = None
+
+    async def start_server_heartbeat():
+        nonlocal server_ping_task, last_client_pong
+        if server_ping_task and not server_ping_task.done():
+            return
+        last_client_pong = monotonic()
+
+        async def _heartbeat():
+            while True:
+                await asyncio.sleep(SERVER_PING_INTERVAL_SECONDS)
+                if agent is None:
+                    continue
+                if ws_manager.agent_connections.get(agent.id) is not websocket:
+                    return
+                if monotonic() - last_client_pong > CLIENT_PONG_TIMEOUT_SECONDS:
+                    logger.warning("Agent %s missed server heartbeat pong, closing socket", agent.id)
+                    await websocket.close(code=1011, reason="heartbeat timeout")
+                    return
+                await websocket.send_text(json.dumps({
+                    "type": "ping",
+                    "data": {"ts": int(datetime.now(timezone.utc).timestamp() * 1000)},
+                }))
+
+        server_ping_task = asyncio.create_task(_heartbeat())
 
     try:
         while True:
@@ -89,6 +120,7 @@ async def agent_ws(websocket: WebSocket):
                 agent = found
 
                 ws_manager.connect_agent(agent.id, websocket)
+                await start_server_heartbeat()
                 await websocket.send_text(json.dumps({
                     "type": "bind_ok",
                     "data": {"access_token": access_token, "agent_id": agent.id},
@@ -112,6 +144,7 @@ async def agent_ws(websocket: WebSocket):
                 agent = found
 
                 ws_manager.connect_agent(agent.id, websocket)
+                await start_server_heartbeat()
                 await websocket.send_text(json.dumps({
                     "type": "auth_ok",
                     "data": {"agent_id": agent.id, "agent_name": agent.name},
@@ -127,6 +160,13 @@ async def agent_ws(websocket: WebSocket):
                     "type": "pong",
                     "data": {"ts": data.get("ts")},
                 }))
+
+            # ── pong (response to server heartbeat) ──────────────────────────
+            elif msg_type == "pong":
+                last_client_pong = monotonic()
+                if agent:
+                    agent.last_seen = datetime.now(timezone.utc)
+                    db.commit()
 
             # ── metrics ──────────────────────────────────────────────────────
             elif msg_type == "metrics":
@@ -160,11 +200,18 @@ async def agent_ws(websocket: WebSocket):
     except Exception as e:
         logger.exception("Agent WS error: %s", e)
     finally:
+        if server_ping_task and not server_ping_task.done():
+            server_ping_task.cancel()
+            try:
+                await server_ping_task
+            except asyncio.CancelledError:
+                pass
         if agent:
-            ws_manager.disconnect_agent(agent.id)
-            agent.status = "offline"
-            db.commit()
-            await ws_manager.broadcast_agent_status(agent.user_id, agent.id, "offline")
+            if ws_manager.agent_connections.get(agent.id) is websocket:
+                ws_manager.disconnect_agent(agent.id, websocket)
+                agent.status = "offline"
+                db.commit()
+                await ws_manager.broadcast_agent_status(agent.user_id, agent.id, "offline")
         db.close()
 
 

@@ -29,7 +29,10 @@ class WSManager:
         self.agent_connections[agent_id] = ws
         logger.info("Agent %d connected", agent_id)
 
-    def disconnect_agent(self, agent_id: int):
+    def disconnect_agent(self, agent_id: int, ws: WebSocket | None = None):
+        current = self.agent_connections.get(agent_id)
+        if ws is not None and current is not ws:
+            return
         self.agent_connections.pop(agent_id, None)
         logger.info("Agent %d disconnected", agent_id)
 

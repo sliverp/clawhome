@@ -135,14 +135,30 @@
           </div>
           <div class="status-card card">
             <div class="status-card-title">Skills</div>
-            <div v-if="resolvedSkills.length" class="skill-list">
-              <div v-for="skill in resolvedSkills" :key="skill.name" class="skill-row">
-                <div class="skill-head">
-                  <span class="channel-name">{{ skill.name }}</span>
-                  <span v-if="skill.source" class="status-tag muted">{{ skill.source }}</span>
+            <div v-if="resolvedSkills.length" class="skill-panel">
+              <div class="skill-summary">
+                <span>{{ resolvedSkills.length }} 个 skill</span>
+                <button
+                  v-if="resolvedSkills.length > collapsedSkillLimit"
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  @click="skillsExpanded = !skillsExpanded"
+                >
+                  {{ skillsExpanded ? '收起' : `展开全部 (${resolvedSkills.length})` }}
+                </button>
+              </div>
+              <div class="skill-list">
+                <div v-for="skill in visibleSkills" :key="skill.name" class="skill-row">
+                  <div class="skill-head">
+                    <span class="channel-name">{{ skill.name }}</span>
+                    <span v-if="skill.source" class="status-tag muted">{{ skill.source }}</span>
+                  </div>
+                  <div v-if="skill.description" class="skill-desc">{{ skill.description }}</div>
+                  <div v-if="skill.file_path" class="skill-path">{{ skill.file_path }}</div>
                 </div>
-                <div v-if="skill.description" class="skill-desc">{{ skill.description }}</div>
-                <div v-if="skill.file_path" class="skill-path">{{ skill.file_path }}</div>
+              </div>
+              <div v-if="!skillsExpanded && hiddenSkillCount > 0" class="skill-more-hint">
+                还有 {{ hiddenSkillCount }} 个 skill 未展开
               </div>
             </div>
             <div v-else class="status-empty">暂无数据</div>
@@ -208,6 +224,7 @@ const agent = ref<Agent | null>(null)
 const renaming = ref(false)
 const newName = ref('')
 const modelRef = ref('')
+const skillsExpanded = ref(false)
 const commandPending = ref(false)
 const cmdFeedback = ref<{ success: boolean; message: string } | null>(null)
 const history = ref<Record<string, MetricPoint[]>>({})
@@ -219,6 +236,11 @@ const openclawModels = computed(() => openclawMeta.value?.models ?? null)
 const enabledPlugins = computed(() => openclawMeta.value?.plugins?.enabled ?? [])
 const configuredPlugins = computed(() => openclawMeta.value?.plugins?.configured ?? [])
 const resolvedSkills = computed(() => openclawMeta.value?.skills?.resolved ?? [])
+const collapsedSkillLimit = 6
+const visibleSkills = computed(() =>
+  skillsExpanded.value ? resolvedSkills.value : resolvedSkills.value.slice(0, collapsedSkillLimit)
+)
+const hiddenSkillCount = computed(() => Math.max(resolvedSkills.value.length - collapsedSkillLimit, 0))
 const configuredPrimaryModel = computed(() => openclawModels.value?.configured_primary ?? null)
 const configuredFallbackModels = computed(() => openclawModels.value?.configured_fallbacks ?? [])
 const configuredModels = computed(() => openclawModels.value?.configured_models ?? [])
@@ -488,6 +510,15 @@ onUnmounted(() => agentsStore.disconnectWS())
 }
 .channel-name { font-size: 14px; font-weight: 600; }
 .channel-count { font-size: 12px; color: #94a3b8; }
+.skill-panel { display: flex; flex-direction: column; gap: 12px; }
+.skill-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: #94a3b8;
+}
 .skill-list { display: flex; flex-direction: column; gap: 12px; }
 .skill-row {
   background: #0f1117;
@@ -512,6 +543,10 @@ onUnmounted(() => agentsStore.disconnectWS())
   font-size: 11px;
   color: #64748b;
   word-break: break-all;
+}
+.skill-more-hint {
+  font-size: 12px;
+  color: #64748b;
 }
 
 .section-title { font-size: 17px; font-weight: 600; margin-bottom: 16px; }

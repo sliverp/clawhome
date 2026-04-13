@@ -131,6 +131,23 @@
                   {{ model }}
                 </button>
               </div>
+              <div v-if="modelUsageRows.length" class="model-usage-block">
+                <div class="model-label">Token 消耗</div>
+                <div class="model-usage-list">
+                  <div v-for="usage in modelUsageRows" :key="usage.model_ref" class="model-usage-row">
+                    <div class="model-usage-head">
+                      <span class="channel-name">{{ usage.model_ref }}</span>
+                      <span class="channel-count">{{ formatCompactNumber(usage.total_tokens) }} tokens</span>
+                    </div>
+                    <div class="tag-list">
+                      <span class="status-tag muted">输入 {{ formatCompactNumber(usage.input_tokens) }}</span>
+                      <span class="status-tag muted">输出 {{ formatCompactNumber(usage.output_tokens) }}</span>
+                      <span class="status-tag muted">会话 {{ usage.session_count }}</span>
+                      <span class="status-tag muted" v-if="usage.cost_usd_total > 0">${{ usage.cost_usd_total.toFixed(4) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="status-card card">
@@ -229,6 +246,7 @@ const resolvedSkills = computed(() => openclawMeta.value?.skills?.resolved ?? []
 const configuredPrimaryModel = computed(() => openclawModels.value?.configured_primary ?? null)
 const configuredFallbackModels = computed(() => openclawModels.value?.configured_fallbacks ?? [])
 const configuredModels = computed(() => openclawModels.value?.configured_models ?? [])
+const modelUsageRows = computed(() => openclawModels.value?.usage_by_model ?? [])
 const activeModelLabel = computed(() => {
   const provider = openclawModels.value?.active_provider
   const model = openclawModels.value?.active_model
@@ -288,6 +306,12 @@ function formatValue(v: number | undefined, def: MetricDefinition): string {
   if (v >= 1_000_000) return (v / 1_000_000).toFixed(2) + 'M'
   if (v >= 1_000) return (v / 1_000).toFixed(1) + 'K'
   return v.toFixed(0)
+}
+
+function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return value.toFixed(0)
 }
 
 async function sendCommand(cmd: string) {
@@ -478,6 +502,32 @@ onUnmounted(() => agentsStore.disconnectWS())
 .model-chip:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+.model-usage-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.model-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.model-usage-row {
+  background: #0f1117;
+  border: 1px solid #2d3148;
+  border-radius: 10px;
+  padding: 12px;
+}
+.model-usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 .channel-list { display: flex; flex-direction: column; gap: 12px; }
 .channel-row {

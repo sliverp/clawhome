@@ -81,6 +81,14 @@ export interface OpenClawModelStatus {
   configured_models?: string[]
   active_model?: string | null
   active_provider?: string | null
+  usage_by_model?: Array<{
+    model_ref: string
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+    cost_usd_total: number
+    session_count: number
+  }>
 }
 
 export interface OpenClawMetadata {

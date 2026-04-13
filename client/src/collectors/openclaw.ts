@@ -92,6 +92,15 @@ interface SkillDetail {
   base_dir?: string
 }
 
+interface ModelUsageDetail {
+  model_ref: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cost_usd_total: number
+  session_count: number
+}
+
 interface ConfiguredState {
   configuredPlugins: string[]
   enabledPlugins: string[]
@@ -104,6 +113,11 @@ interface ConfiguredState {
 
 function normalizeMetricKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function getModelRef(model?: string, provider?: string): string | null {
+  if (!model) return null
+  return provider ? `${provider}/${model}` : model
 }
 
 function countJsonlLines(filePath: string): number {
@@ -236,6 +250,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   let latestContextTokens = 0
   let latestUpdatedAt = 0
   let latestResolvedSkills: ResolvedSkill[] = []
+  const modelUsage: Record<string, ModelUsageDetail> = {}
 
   // Message-level counts
   let conversationCount = 0   // user turns
@@ -259,6 +274,7 @@ export function collectOpenclawMetrics(): MetricSnapshot {
       sessionCount += Object.keys(idx).length
 
       for (const session of Object.values(idx)) {
+        const modelRef = getModelRef(session.model, session.modelProvider)
         totalInputTokens += session.inputTokens ?? 0
         totalOutputTokens += session.outputTokens ?? 0
         totalTokens += session.totalTokens ?? ((session.inputTokens ?? 0) + (session.outputTokens ?? 0))
@@ -267,6 +283,22 @@ export function collectOpenclawMetrics(): MetricSnapshot {
         totalCost += session.estimatedCostUsd ?? 0
         totalCompactions += session.compactionCount ?? 0
         totalRuntimeMs += session.runtimeMs ?? 0
+        if (modelRef) {
+          const usage = modelUsage[modelRef] ?? {
+            model_ref: modelRef,
+            input_tokens: 0,
+            output_tokens: 0,
+            total_tokens: 0,
+            cost_usd_total: 0,
+            session_count: 0,
+          }
+          usage.input_tokens += session.inputTokens ?? 0
+          usage.output_tokens += session.outputTokens ?? 0
+          usage.total_tokens += session.totalTokens ?? ((session.inputTokens ?? 0) + (session.outputTokens ?? 0))
+          usage.cost_usd_total += session.estimatedCostUsd ?? 0
+          usage.session_count += 1
+          modelUsage[modelRef] = usage
+        }
 
         // Track latest active session for current model/context info
         const updated = session.updatedAt ?? 0
@@ -354,6 +386,14 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   if (latestModel) {
     snapshot[`model_active_${normalizeMetricKey(`${latestProvider || 'unknown'}_${latestModel}`)}`] = 1
   }
+  for (const usage of Object.values(modelUsage)) {
+    const metricSuffix = normalizeMetricKey(usage.model_ref)
+    snapshot[`token_input_model_${metricSuffix}`] = usage.input_tokens
+    snapshot[`token_output_model_${metricSuffix}`] = usage.output_tokens
+    snapshot[`token_total_model_${metricSuffix}`] = usage.total_tokens
+    snapshot[`cost_usd_model_${metricSuffix}`] = Math.round(usage.cost_usd_total * 1_000_000) / 1_000_000
+    snapshot[`session_count_model_${metricSuffix}`] = usage.session_count
+  }
   for (const pluginName of enabledPlugins) {
     snapshot[`plugin_enabled_${normalizeMetricKey(pluginName)}`] = 1
   }
@@ -386,6 +426,7 @@ export function collectOpenclawState(): StateSnapshot {
   let skills: SkillDetail[] = []
   let activeModel: string | null = null
   let activeProvider: string | null = null
+  const modelUsage: Record<string, ModelUsageDetail> = {}
 
   for (const channelName of configuredChannels) {
     details[channelName] = {
@@ -403,7 +444,24 @@ export function collectOpenclawState(): StateSnapshot {
       try {
         const idx = JSON.parse(fs.readFileSync(sessionsIndex, 'utf-8')) as Record<string, SessionEntry>
         for (const session of Object.values(idx)) {
+          const modelRef = getModelRef(session.model, session.modelProvider)
           const updated = session.updatedAt ?? 0
+          if (modelRef) {
+            const usage = modelUsage[modelRef] ?? {
+              model_ref: modelRef,
+              input_tokens: 0,
+              output_tokens: 0,
+              total_tokens: 0,
+              cost_usd_total: 0,
+              session_count: 0,
+            }
+            usage.input_tokens += session.inputTokens ?? 0
+            usage.output_tokens += session.outputTokens ?? 0
+            usage.total_tokens += session.totalTokens ?? ((session.inputTokens ?? 0) + (session.outputTokens ?? 0))
+            usage.cost_usd_total += session.estimatedCostUsd ?? 0
+            usage.session_count += 1
+            modelUsage[modelRef] = usage
+          }
           if (updated > latestUpdatedAt) {
             latestUpdatedAt = updated
             activeModel = session.model ?? null
@@ -433,6 +491,12 @@ export function collectOpenclawState(): StateSnapshot {
         configured_models: configuredModels,
         active_model: activeModel,
         active_provider: activeProvider,
+        usage_by_model: Object.values(modelUsage)
+          .map((usage) => ({
+            ...usage,
+            cost_usd_total: Math.round(usage.cost_usd_total * 1_000_000) / 1_000_000,
+          }))
+          .sort((a, b) => b.total_tokens - a.total_tokens),
       },
       plugins: {
         configured: configuredPlugins,

@@ -48,6 +48,8 @@ export const agentsApi = {
     http.post<{ request_id: string; status: string }>(`/agents/${id}/refresh`),
   setModel: (id: number, modelRef: string) =>
     http.post<{ request_id: string; status: string }>(`/agents/${id}/model`, { model_ref: modelRef }),
+  chat: (id: number, data: { message: string; agent_name?: string }) =>
+    http.post<{ request_id: string; status: string }>(`/agents/${id}/chat`, data),
 }
 
 // ── Metrics ──────────────────────────────────────────────────────────────
@@ -151,4 +153,12 @@ export interface MetricDefinition {
   display_name: string
   unit: string | null
   chart_type: string
+}
+
+export interface CommandResultEvent {
+  agent_id: number
+  request_id: string
+  success: boolean
+  output: unknown
+  error?: string
 }

@@ -15,13 +15,17 @@ export interface CommandResult {
  */
 export async function executeCommand(commandStr: string): Promise<CommandResult> {
   const parts = commandStr.trim().split(/\s+/);
+  return executeCommandArgs(parts);
+}
+
+export async function executeCommandArgs(parts: string[], timeout = 30_000): Promise<CommandResult> {
   const [bin, ...args] = parts;
   if (!bin) {
     return { success: false, output: "", error: "Empty command" };
   }
 
   try {
-    const { stdout, stderr } = await execFileAsync(bin, args, { timeout: 30_000 });
+    const { stdout, stderr } = await execFileAsync(bin, args, { timeout });
     return { success: true, output: (stdout + stderr).trim() };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; message?: string };

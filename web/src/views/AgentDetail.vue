@@ -194,6 +194,41 @@
         </div>
       </section>
 
+      <section v-if="agent?.agent_type === 'openclaw'" class="status-section">
+        <h2 class="section-title">OpenClaw Chat 验证</h2>
+        <div class="chat-card card">
+          <div class="chat-actions">
+            <input
+              v-model="chatMessage"
+              class="form-input chat-input"
+              placeholder="输入一条消息发给 openclaw main agent"
+              @keyup.enter="sendChat"
+            />
+            <button
+              class="btn btn-primary btn-sm"
+              :disabled="agent.status !== 'online' || commandPending || !chatMessage.trim()"
+              @click="sendChat"
+            >
+              发送
+            </button>
+          </div>
+          <div v-if="chatPendingRequestId && !chatResult" class="status-empty">等待 OpenClaw 返回…</div>
+          <div v-else-if="chatResult" class="chat-result">
+            <div class="chat-result-head">
+              <span class="channel-name">{{ chatResult.model || 'unknown model' }}</span>
+              <span class="channel-count">{{ chatResult.provider || 'unknown provider' }}</span>
+            </div>
+            <pre class="chat-text">{{ chatResult.text || '(empty response)' }}</pre>
+            <div class="tag-list">
+              <span class="status-tag muted">input {{ formatCompactNumber(chatUsage.input ?? 0) }}</span>
+              <span class="status-tag muted">output {{ formatCompactNumber(chatUsage.output ?? 0) }}</span>
+              <span class="status-tag muted">total {{ formatCompactNumber(chatUsage.total ?? 0) }}</span>
+              <span class="status-tag muted" v-if="chatResult.session_id">session {{ chatResult.session_id }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Charts -->
       <div class="charts-section" v-if="shownDefinitions.length">
         <h2 class="section-title">历史趋势</h2>
@@ -232,12 +267,17 @@ const agent = ref<Agent | null>(null)
 const renaming = ref(false)
 const newName = ref('')
 const modelRef = ref('')
+const chatMessage = ref('')
+const chatPendingRequestId = ref<string | null>(null)
 const commandPending = ref(false)
 const cmdFeedback = ref<{ success: boolean; message: string } | null>(null)
 const history = ref<Record<string, MetricPoint[]>>({})
 
 const latestMetrics = computed(() => agentsStore.latestMetrics[agentId])
 const definitions = computed(() => agentsStore.definitions)
+const chatCommandResult = computed(() =>
+  chatPendingRequestId.value ? agentsStore.commandResults[chatPendingRequestId.value] : undefined
+)
 const openclawMeta = computed<OpenClawMetadata | null>(() => agent.value?.metadata_?.openclaw ?? null)
 const openclawModels = computed(() => openclawMeta.value?.models ?? null)
 const enabledPlugins = computed(() => openclawMeta.value?.plugins?.enabled ?? [])
@@ -262,6 +302,18 @@ const channelRows = computed(() => {
     messageCount: detail.message_count,
   }))
 })
+const chatResult = computed(() => {
+  const output = chatCommandResult.value?.output
+  if (!output || typeof output !== 'object') return null
+  return output as {
+    text?: string
+    session_id?: string | null
+    provider?: string | null
+    model?: string | null
+    usage?: Record<string, number>
+  }
+})
+const chatUsage = computed(() => chatResult.value?.usage ?? {})
 
 const COLORS: Record<string, string> = {
   cpu_percent: '#6366f1',
@@ -366,6 +418,25 @@ async function setModel(target?: string) {
     }, 2000)
   } catch {
     cmdFeedback.value = { success: false, message: '模型切换命令发送失败，请检查 Agent 连接状态' }
+  } finally {
+    commandPending.value = false
+    setTimeout(() => (cmdFeedback.value = null), 5000)
+  }
+}
+
+async function sendChat() {
+  const message = chatMessage.value.trim()
+  if (!message) return
+
+  commandPending.value = true
+  cmdFeedback.value = null
+  chatPendingRequestId.value = null
+  try {
+    const res = await agentsApi.chat(agentId, { message, agent_name: 'main' })
+    chatPendingRequestId.value = res.data.request_id
+    cmdFeedback.value = { success: true, message: '已发送 OpenClaw chat 请求，等待返回…' }
+  } catch {
+    cmdFeedback.value = { success: false, message: 'OpenClaw chat 请求发送失败，请检查 Agent 连接状态' }
   } finally {
     commandPending.value = false
     setTimeout(() => (cmdFeedback.value = null), 5000)
@@ -587,4 +658,42 @@ onUnmounted(() => agentsStore.disconnectWS())
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }
 .chart-wrap { padding: 20px; }
 .chart-title { font-size: 13px; color: #94a3b8; margin-bottom: 14px; }
+.chat-card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.chat-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.chat-input {
+  flex: 1;
+  min-width: 0;
+}
+.chat-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chat-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.chat-text {
+  margin: 0;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid #2d3148;
+  background: #0f1117;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  line-height: 1.6;
+}
 </style>

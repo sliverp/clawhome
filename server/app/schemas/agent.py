@@ -41,3 +41,8 @@ class AgentCommandRequest(BaseModel):
 
 class AgentModelSetRequest(BaseModel):
     model_ref: str
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+    agent_name: str = "main"

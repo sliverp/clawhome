@@ -1,12 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { agentsApi, metricsApi, type Agent, type MetricLatest, type MetricDefinition } from '../api/index.js'
+import { agentsApi, metricsApi, type Agent, type CommandResultEvent, type MetricLatest, type MetricDefinition } from '../api/index.js'
 import { useAuthStore } from './auth.js'
 
 export const useAgentsStore = defineStore('agents', () => {
   const agents = ref<Agent[]>([])
   const latestMetrics = ref<Record<number, MetricLatest>>({})
   const definitions = ref<MetricDefinition[]>([])
+  const commandResults = ref<Record<string, CommandResultEvent>>({})
   let ws: WebSocket | null = null
 
   async function fetchAgents() {
@@ -49,6 +50,9 @@ export const useAgentsStore = defineStore('agents', () => {
             ...metrics,
           }
           latestMetrics.value[agent_id].recorded_at = new Date().toISOString()
+        } else if (msg.type === 'command_result') {
+          const result = msg.data as CommandResultEvent
+          commandResults.value[result.request_id] = result
         }
       } catch { /* ignore */ }
     }
@@ -79,6 +83,7 @@ export const useAgentsStore = defineStore('agents', () => {
     agents,
     latestMetrics,
     definitions,
+    commandResults,
     fetchAgents,
     fetchLatest,
     fetchDefinitions,

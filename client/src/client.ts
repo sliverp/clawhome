@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import { AgentConfig, InstanceConfig } from "./config.js";
 import { collectCustomMetrics, collectCustomState } from "./collectors/custom.js";
-import { executeCommand } from "./executor.js";
+import { executeCommand, executeCommandArgs } from "./executor.js";
 import { saveInstanceConfig } from "./storage.js";
 import { StateSnapshot } from "./collectors/base.js";
 
@@ -191,6 +191,82 @@ export class ClawHomeClient {
         await this.reportMetrics();
       }
       this.send({ type: "command_result", data: { request_id: requestId, ...result } });
+      return;
+    }
+
+    if (cmd === "chat") {
+      const message = typeof args?.message === "string" ? args.message.trim() : "";
+      const agentName = typeof args?.agent_name === "string" ? args.agent_name.trim() : "main";
+      if (!message) {
+        this.send({
+          type: "command_result",
+          data: { request_id: requestId, success: false, output: "Missing message" },
+        });
+        return;
+      }
+
+      console.log(`[clawhome] Running OpenClaw chat on agent ${agentName}`);
+      const result = await executeCommandArgs(
+        ["openclaw", "agent", "--local", "--agent", agentName, "-m", message, "--json"],
+        300_000
+      );
+      if (!result.success) {
+        this.send({
+          type: "command_result",
+          data: { request_id: requestId, success: false, output: result.output, error: result.error },
+        });
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(result.output) as {
+          payloads?: Array<{ text?: string | null; mediaUrl?: string | null }>
+          meta?: {
+            durationMs?: number
+            aborted?: boolean
+            stopReason?: string
+            agentMeta?: {
+              sessionId?: string
+              provider?: string
+              model?: string
+              usage?: Record<string, number>
+            }
+          }
+        }
+        const text = (parsed.payloads ?? [])
+          .map((payload) => payload.text?.trim())
+          .filter((value): value is string => Boolean(value))
+          .join("\n\n")
+
+        this.send({
+          type: "command_result",
+          data: {
+            request_id: requestId,
+            success: true,
+            output: {
+              text,
+              payloads: parsed.payloads ?? [],
+              session_id: parsed.meta?.agentMeta?.sessionId ?? null,
+              provider: parsed.meta?.agentMeta?.provider ?? null,
+              model: parsed.meta?.agentMeta?.model ?? null,
+              usage: parsed.meta?.agentMeta?.usage ?? {},
+              duration_ms: parsed.meta?.durationMs ?? null,
+              aborted: parsed.meta?.aborted ?? false,
+              stop_reason: parsed.meta?.stopReason ?? null,
+            },
+          },
+        });
+      } catch (error) {
+        this.send({
+          type: "command_result",
+          data: {
+            request_id: requestId,
+            success: false,
+            output: result.output,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
       return;
     }
 

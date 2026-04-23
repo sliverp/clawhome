@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>LightClaw · 龙虾小镇</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=10.5" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ═══ 转场覆盖层 SceneTransitionLayer ═══ -->
+    <div id="scene-transition" class="scene-transition">
+      <div class="scene-transition__overlay" id="transition-overlay"></div>
+      <div class="scene-transition__sprite" id="transition-sprite"></div>
+    </div>
+
+    <!-- ═══ 场景容器 ═══ -->
+    <div id="scene-container">
+
+      <!-- ── 场景一：云上池塘 PondScene ── -->
+      <div class="scene active" data-scene="pond">
+        <div class="scene__bg scene__bg--pond">
+          <div id="phaser-pond" class="phaser-canvas-wrap"></div>
+        </div>
+        <div class="scene-caption">日常问答与状态查看</div>
+        <div class="pond-dynamics">
+          <div class="pond-cloud pond-cloud--1"></div>
+          <div class="pond-cloud pond-cloud--2"></div>
+          <div class="pond-cloud pond-cloud--3"></div>
+          <div class="pond-ripple pond-ripple--1"></div>
+          <div class="pond-ripple pond-ripple--2"></div>
+          <div class="pond-leaf pond-leaf--1"></div>
+          <div class="pond-leaf pond-leaf--2"></div>
+          <div class="pond-light"></div>
+        </div>
+        <div class="pond-hotspots">
+          <!-- 树屋 → 成长档案 -->
+          <button class="hotspot hotspot--phaser" id="hs-treehouse" data-hotspot="treehouse" data-label="成长档案" style="--hs-top:28%;--hs-left:14%;--hs-w:12%;--hs-h:22%;" aria-label="成长档案">
+            <span class="phaser-label phaser-label--house">成长档案</span>
+          </button>
+          <!-- 漂流瓶1 → 健康看板 -->
+          <button class="hotspot hotspot--phaser" id="hs-health" data-hotspot="health" data-label="健康看板" style="--hs-top:78%;--hs-left:29%;--hs-w:10%;--hs-h:14%;" aria-label="健康看板">
+            <span class="phaser-label">健康看板</span>
+          </button>
+          <!-- 漂流瓶2 → 出生证明 -->
+          <button class="hotspot hotspot--phaser" id="hs-birth" data-hotspot="birth-cert" data-label="出生证明" style="--hs-top:62%;--hs-left:44%;--hs-w:10%;--hs-h:14%;" aria-label="出生证明">
+            <span class="phaser-label">出生证明</span>
+          </button>
+          <!-- 漂流瓶3 → 成长日记 -->
+          <button class="hotspot hotspot--phaser" id="hs-diary" data-hotspot="diary" data-label="成长日记" style="--hs-top:64%;--hs-left:52%;--hs-w:10%;--hs-h:14%;" aria-label="成长日记">
+            <span class="phaser-label">成长日记</span>
+            <span class="hotspot__unread-badge" id="diary-unread"></span>
+          </button>
+          <!-- 次要入口：完整历史对话 -->
+          <button class="hotspot hotspot--secondary hotspot--icon" data-hotspot="history" data-label="历史对话" style="--hs-top:5%;--hs-left:88%;--hs-w:6%;--hs-h:8%;" aria-label="历史对话">
+            <svg class="hotspot__clock-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span class="hotspot__glow"></span>
+            <span class="hotspot__tag"><span class="hotspot__tag-icon">🕐</span><span class="hotspot__tag-text">历史对话</span></span>
+          </button>
+        </div>
+        <div class="pond-character" id="pond-character">
+          <div class="pond-character__sprite" id="pond-character-sprite">
+            <canvas class="sprite-canvas" id="pond-lobster-canvas" width="240" height="240"></canvas>
+          </div>
+          <div class="pond-character__bubble" id="character-bubble">
+            <span class="pond-character__bubble-text" id="bubble-text"></span>
+          </div>
+          <!-- 龙虾 hover 操作菜单 -->
+          <div class="char-actions" id="char-actions">
+            <button class="char-actions__btn" data-action="bath">
+              <span class="char-actions__icon">🛁</span>
+              <span class="char-actions__label">泡澡</span>
+            </button>
+            <button class="char-actions__btn" data-action="study">
+              <span class="char-actions__icon">📖</span>
+              <span class="char-actions__label">学习</span>
+            </button>
+            <button class="char-actions__btn" data-action="exam">
+              <span class="char-actions__icon">📝</span>
+              <span class="char-actions__label">考试</span>
+            </button>
+          </div>
+        </div>
+        <div class="treehouse-error-overlay" id="treehouse-error-overlay">
+          <div class="treehouse-error__flames">
+            <div class="treehouse-error__flame treehouse-error__flame--1"></div>
+            <div class="treehouse-error__flame treehouse-error__flame--2"></div>
+            <div class="treehouse-error__flame treehouse-error__flame--3"></div>
+          </div>
+          <div class="treehouse-error__smoke">
+            <div class="treehouse-error__smoke-puff treehouse-error__smoke-puff--1"></div>
+            <div class="treehouse-error__smoke-puff treehouse-error__smoke-puff--2"></div>
+          </div>
+          <div class="treehouse-error__glow"></div>
+        </div>
+      </div>
+
+      <!-- ── 场景二：云上森林考场 ForestExamScene ── -->
+      <div class="scene" data-scene="forest">
+        <div class="scene__bg scene__bg--forest">
+          <div id="phaser-forest" class="phaser-canvas-wrap"></div>
+        </div>
+        <div class="scene-caption">测评与挑战</div>
+        <!-- 森林轻动态覆盖层 -->
+        <div class="forest-dynamics">
+          <div class="forest-cloud forest-cloud--1"></div>
+          <div class="forest-cloud forest-cloud--2"></div>
+          <div class="forest-light-spot forest-light-spot--1"></div>
+          <div class="forest-light-spot forest-light-spot--2"></div>
+          <div class="forest-leaf-fall forest-leaf-fall--1"></div>
+          <div class="forest-leaf-fall forest-leaf-fall--2"></div>
+          <div class="forest-leaf-fall forest-leaf-fall--3"></div>
+        </div>
+        <!-- 考场布置 -->
+        <div class="exam-scene-layout" id="exam-scene-layout">
+          <div class="exam-scene__desk">
+            <span class="exam-scene__desk-icon">🪑</span>
+            <span class="exam-scene__desk-label">考位</span>
+          </div>
+          <div class="exam-scene__character" id="forest-character">
+            <canvas class="sprite-canvas" id="forest-lobster-canvas" width="320" height="266"></canvas>
+          </div>
+          <div class="exam-scene__target">
+            <span class="exam-scene__target-icon">🎯</span>
+          </div>
+          <div class="exam-scene__paper">
+            <span class="exam-scene__paper-icon">📄</span>
+          </div>
+          <!-- 考试状态提示 -->
+          <div class="exam-scene__status" id="exam-scene-status">
+            <span class="exam-scene__status-icon">📝</span>
+            <span class="exam-scene__status-label" id="exam-status-label">专注答题中…</span>
+          </div>
+          <!-- 考试超时提示 -->
+          <div class="exam-timeout-hint" id="exam-timeout-hint">
+            <div class="exam-timeout-hint__card">
+              <span class="exam-timeout-hint__icon">⏳</span>
+              <p class="exam-timeout-hint__text">今天的考题有点难，小钳正在努力中，先回池塘等我吧！</p>
+              <button class="exam-timeout-hint__btn" id="exam-back-to-pond">🌿 回到池塘</button>
+            </div>
+          </div>
+        </div>
+        <!-- 考试结束碎纸片动画占位 -->
+        <div class="exam-action-layer__confetti" id="exam-confetti" style="position:absolute;inset:0;z-index:10;pointer-events:none;overflow:hidden;"></div>
+      </div>
+
+      <!-- ── 场景三：云上菜地工作场 FarmWorkScene ── -->
+      <div class="scene" data-scene="farm">
+        <div class="scene__bg scene__bg--farm">
+          <div id="phaser-farm" class="phaser-canvas-wrap"></div>
+        </div>
+        <div class="scene-caption">长任务与执行</div>
+        <!-- 菜地轻动态覆盖层 -->
+        <div class="farm-dynamics">
+          <div class="farm-cloud farm-cloud--1"></div>
+          <div class="farm-cloud farm-cloud--2"></div>
+          <div class="farm-leaf farm-leaf--1"></div>
+          <div class="farm-leaf farm-leaf--2"></div>
+          <div class="farm-leaf farm-leaf--3"></div>
+          <div class="farm-sparkle farm-sparkle--1"></div>
+          <div class="farm-sparkle farm-sparkle--2"></div>
+        </div>
+        <!-- FarmActionLayer 菜地工作动画容器 -->
+        <div class="farm-action-layer" id="farm-action-layer">
+          <div class="farm-action-layer__character" id="farm-character">
+            <div class="farm-shrimp-dig" style="display:block;">
+              <canvas class="sprite-canvas" id="farm-dig-canvas" width="320" height="302"></canvas>
+            </div>
+            <div class="farm-shrimp-pick" style="display:none;">
+              <canvas class="sprite-canvas" id="farm-pick-canvas" width="320" height="298"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══ 顶部信息栏 TopBar ═══ -->
+    <div id="top-bar" class="top-bar">
+      <div class="top-bar__scene" id="top-bar-scene">
+        <span class="top-bar__scene-dot"></span>
+        <span class="top-bar__scene-name" id="top-bar-scene-name">云上森林</span>
+      </div>
+      <div class="top-bar__status" id="top-bar-status">
+        <span class="top-bar__status-text" id="top-bar-status-text">日常待机</span>
+      </div>
+      <button id="back-to-pond" class="top-bar__back" aria-label="回到池塘">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>回到池塘</span>
+      </button>
+    </div>
+
+    <!-- ═══ 热点弹层（通用轻量面板） ═══ -->
+    <div id="hotspot-modal" class="hotspot-modal">
+      <div class="hotspot-modal__backdrop"></div>
+      <div class="hotspot-modal__card">
+        <div class="hotspot-modal__header">
+          <h3 class="hotspot-modal__title" id="modal-title">标题</h3>
+          <button class="hotspot-modal__close" id="modal-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="hotspot-modal__body" id="modal-body"><p>内容占位</p></div>
+      </div>
+    </div>
+
+    <!-- ═══ 成长档案弹层（独立容器，带 3 tab） ═══ -->
+    <div id="growth-modal" class="growth-modal">
+      <div class="growth-modal__backdrop" id="growth-modal-bd"></div>
+      <div class="growth-modal__card">
+        <div class="growth-modal__header">
+          <h3 class="growth-modal__title">🏡 成长档案</h3>
+          <button class="growth-modal__close" id="growth-modal-close" aria-label="关闭">&times;</button>
+        </div>
+        <!-- Tab 栏 -->
+        <div class="growth-tabs">
+          <button class="growth-tab active" data-tab="status">当前状态</button>
+          <button class="growth-tab" data-tab="skill">技能树</button>
+          <button class="growth-tab" data-tab="cert">证书夹</button>
+        </div>
+        <!-- Tab 内容 -->
+        <div class="growth-tab-panels">
+          <!-- Tab 1：当前状态 -->
+          <div class="growth-tab-panel active" data-panel="status">
+            <div class="growth-status">
+              <div class="growth-status__row"><span class="growth-status__label">当前阶段</span><span class="growth-status__value">🦐 幼虾</span></div>
+              <div class="growth-status__row"><span class="growth-status__label">当前倾向</span><span class="growth-status__value">执行型 · 认真</span></div>
+              <div class="growth-status__row"><span class="growth-status__label">最近变化</span><span class="growth-status__value">数据分析偏好 ↑</span></div>
+              <div class="growth-status__row"><span class="growth-status__label">最近学会</span><span class="growth-status__value">竞品分析框架</span></div>
+              <div class="growth-status__row"><span class="growth-status__label">活跃场景偏好</span><span class="growth-status__value">菜地 &gt; 池塘 &gt; 森林</span></div>
+            </div>
+          </div>
+          <!-- Tab 2：技能树（7 维度，JS 动态渲染） -->
+          <div class="growth-tab-panel" data-panel="skill">
+            <div class="growth-skill-tree">
+              <!-- JS renderSkillTreeTab() 动态填充 -->
+            </div>
+          </div>
+          <!-- Tab 3：证书夹 -->
+          <div class="growth-tab-panel" data-panel="cert">
+            <div class="growth-certs">
+              <div class="growth-cert growth-cert--clickable" data-cert="birth">
+                <span class="growth-cert__icon">📜</span>
+                <div class="growth-cert__info">
+                  <span class="growth-cert__name">出生证明（副本）</span>
+                  <span class="growth-cert__desc">名字：小钳 · 初始性格：认真型</span>
+                </div>
+                <span class="growth-cert__date">2026-03-28</span>
+                <span class="growth-cert__arrow">›</span>
+              </div>
+              <div class="growth-cert growth-cert--clickable" data-cert="exam-basic">
+                <span class="growth-cert__icon">🎓</span>
+                <div class="growth-cert__info">
+                  <span class="growth-cert__name">基础认知测试</span>
+                  <span class="growth-cert__desc">得分 92 / 100 · 通过</span>
+                </div>
+                <span class="growth-cert__date">2026-03-28</span>
+                <span class="growth-cert__arrow">›</span>
+              </div>
+              <div class="growth-cert growth-cert--clickable" data-cert="task-cert">
+                <span class="growth-cert__icon">📋</span>
+                <div class="growth-cert__info">
+                  <span class="growth-cert__name">初级任务资格</span>
+                  <span class="growth-cert__desc">累计完成 10 个任务</span>
+                </div>
+                <span class="growth-cert__date">2026-03-30</span>
+                <span class="growth-cert__arrow">›</span>
+              </div>
+              <div class="growth-cert growth-cert--placeholder">
+                <span class="growth-cert__icon">🔒</span>
+                <div class="growth-cert__info">
+                  <span class="growth-cert__name">更多里程碑</span>
+                  <span class="growth-cert__desc">完成更多任务和考试后解锁</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 离线日记册弹层（独立容器） ═══ -->
+    <div id="diary-modal" class="diary-modal">
+      <div class="diary-modal__backdrop" id="diary-modal-bd"></div>
+      <div class="diary-modal__card">
+        <div class="diary-modal__header">
+          <h3 class="diary-modal__title">📓 成长日记</h3>
+          <button class="diary-modal__close" id="diary-modal-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="diary-modal__body" id="diary-modal-body">
+          <!-- JS 动态渲染日记页 -->
+        </div>
+        <div class="diary-modal__nav">
+          <button class="diary-nav__btn diary-nav__btn--prev" id="diary-prev" aria-label="上一条">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            <span>上一条</span>
+          </button>
+          <span class="diary-nav__indicator" id="diary-indicator">1 / 3</span>
+          <button class="diary-nav__btn diary-nav__btn--next" id="diary-next" aria-label="下一条">
+            <span>下一条</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 健康看板弹层（独立容器） ═══ -->
+    <div id="health-modal" class="health-modal">
+      <div class="health-modal__backdrop" id="health-modal-bd"></div>
+      <div class="health-modal__card">
+        <div class="health-modal__header">
+          <h3 class="health-modal__title">💚 健康看板</h3>
+          <button class="health-modal__close" id="health-modal-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="health-modal__body" id="health-modal-body">
+          <!-- JS 动态渲染 5 个区块：当前状态 / 活跃情况 / Token概览 / 趋势图 / 结构分布 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 中间事件弹窗 EventModal ═══ -->
+    <div id="event-modal" class="event-modal">
+      <div class="event-modal__backdrop"></div>
+      <div class="event-modal__card" id="event-modal-card"></div>
+    </div>
+
+    <!-- ═══ 右侧对话浮层（仅展示对话内容） ═══ -->
+    <div id="chat-panel-backdrop" class="chat-panel-backdrop"></div>
+    <!-- 右侧边缘常驻拉出按钮 -->
+    <button id="chat-pull-tab" class="chat-pull-tab" aria-label="展开对话记录">
+      <svg class="chat-pull-tab__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="chat-pull-tab__text">对话</span>
+    </button>
+    <div id="chat-panel" class="chat-panel">
+      <div class="chat-panel__header">
+        <span class="chat-panel__label" id="chat-panel-label">💬 对话</span>
+        <button class="chat-panel__close" id="chat-panel-close" aria-label="关闭">&times;</button>
+      </div>
+      <div class="chat-panel__body" id="chat-panel-body"></div>
+    </div>
+
+    <!-- ═══ 左下角状态条 SceneStatusBar ═══ -->
+    <div id="status-bar">
+      <div class="status-bar__dot"></div>
+      <span class="status-bar__text">待机中</span>
+    </div>
+
+    <!-- ═══ 底部输入框 SceneInputBar ═══ -->
+    <div id="input-bar">
+      <div class="input-bar__inner">
+        <input id="task-input" class="input-bar__field" type="text" placeholder="给你的虾一个任务，例如：帮我分析这个视频" autocomplete="off" />
+        <button id="send-btn" class="input-bar__send" aria-label="发送">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══ DEV 工具栏（默认隐藏，按 ~ 或点右下角小点呼出） ═══ -->
+    <button id="dev-toggle" class="dev-toggle" aria-label="DEV 面板" title="开发面板 (~)">⚙</button>
+    <div id="dev-toolbar" class="dev-toolbar--hidden">
+      <span class="dev-toolbar__label">DEV：</span>
+      <button class="dev-toolbar__btn active" data-target="pond">🌿 池塘</button>
+      <button class="dev-toolbar__btn" data-target="forest">🌲 森林</button>
+      <button class="dev-toolbar__btn" data-target="farm">🌱 菜地</button>
+      <button class="dev-toolbar__btn dev-toolbar__btn--separator" disabled>│</button>
+      <button class="dev-toolbar__btn" data-target="alert">🔥 异常</button>
+      <button class="dev-toolbar__btn" data-target="recover">✅ 恢复</button>
+      <button class="dev-toolbar__btn" data-target="birth">🎂 出生</button>
+      <button class="dev-toolbar__btn" data-target="qa">💬 问答</button>
+      <button class="dev-toolbar__btn" data-target="long-task">📦 长任务</button>
+      <button class="dev-toolbar__btn" data-target="toggle-unread">📕 未读</button>
+      <button class="dev-toolbar__btn dev-toolbar__btn--separator" disabled>│</button>
+      <button class="dev-toolbar__btn" data-target="start-exam">📝 发起考试</button>
+      <button class="dev-toolbar__btn" data-target="confirm-exam">✅ 确认开考</button>
+      <button class="dev-toolbar__btn" data-target="finish-exam">🎓 交卷</button>
+      <button class="dev-toolbar__btn" data-target="start-work">⚙️ 开工</button>
+      <button class="dev-toolbar__btn" data-target="finish-work">📊 完工</button>
+      <button class="dev-toolbar__btn dev-toolbar__btn--separator" disabled>│</button>
+      <button class="dev-toolbar__btn" data-target="start-study">📖 学习</button>
+      <button class="dev-toolbar__btn" data-target="finish-study">✅ 完学</button>
+    </div>
+
+  </div>
+  <script src="assets/phaser.min.js"></script>
+  <script src="phaser-scenes.js?v=3.3"></script>
+  <script src="sprite-animator.js"></script>
+  <script src="app.js?v=10.3"></script>
+</body>
+</html>

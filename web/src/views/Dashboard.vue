@@ -7,7 +7,7 @@
         <span class="logo-text">ClawHome</span>
       </div>
       <nav class="sidebar-nav">
-        <router-link to="/dashboard" class="nav-item active">总览</router-link>
+        <router-link to="/admin" class="nav-item active">总览</router-link>
       </nav>
       <div class="sidebar-footer">
         <div class="user-info">
@@ -58,7 +58,7 @@
           :key="agent.id"
           :agent="agent"
           :metrics="agents.latestMetrics[agent.id]"
-          @click="$router.push(`/agents/${agent.id}`)"
+          @click="$router.push(`/admin/agents/${agent.id}`)"
         />
       </div>
     </main>

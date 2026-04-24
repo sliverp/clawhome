@@ -6,7 +6,7 @@
         <span class="logo-text">ClawHome</span>
       </div>
       <nav class="sidebar-nav">
-        <router-link to="/dashboard" class="nav-item">← 返回总览</router-link>
+        <router-link to="/admin" class="nav-item">← 返回总览</router-link>
       </nav>
     </aside>
 
@@ -463,7 +463,7 @@ async function submitRename() {
 async function confirmDelete() {
   if (!confirm(`确认删除 Agent「${agent.value?.name}」？此操作不可撤销。`)) return
   await agentsApi.delete(agentId)
-  router.push('/dashboard')
+  router.push('/admin')
 }
 
 async function loadHistory() {

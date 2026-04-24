@@ -31,11 +31,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 
 const auth = useAuthStore()
-const router = useRouter()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -46,7 +44,8 @@ async function onSubmit() {
   loading.value = true
   try {
     await auth.login(email.value, password.value)
-    router.push('/dashboard')
+    // 硬跳转到龙虾静态页（StaticFiles 挂载，非 Vue 路由）
+    window.location.href = '/lobster/'
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     error.value = err.response?.data?.detail || '登录失败，请检查邮箱和密码'

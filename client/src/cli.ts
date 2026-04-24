@@ -23,12 +23,23 @@ import { AgentConfig, InstanceConfig } from "./config.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// 从 package.json 读取版本号，避免代码里硬编码后与 npm 发布版本不一致
+function readPackageVersion(): string {
+  try {
+    const pkgPath = path.resolve(__dirname, "..", "package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 const program = new Command();
 
 program
   .name("clawhome-client")
   .description("ClawHome Agent Monitor Client")
-  .version("0.1.12");
+  .version(readPackageVersion());
 
 // ── init command ──────────────────────────────────────────────────────────
 

@@ -1528,12 +1528,45 @@
     if (LOBSTER.diary && LOBSTER.diary.unread_count > 0) {
       setUnread(true)
     }
-    // 如果后端记录了 current_scene，恢复到那个场景
-    if (LOBSTER.profile && LOBSTER.profile.current_scene && LOBSTER.profile.current_scene !== curScene) {
-      // 仅视觉层同步，不触发状态机
-      // （场景主动切换在阶段 5 考试/学习/工作时再上报，这里只读）
-    }
   }).catch(function (err) { console.warn('preload lobster:', err) })
+
+  // ═══ WebSocket 实时订阅（阶段4） ═══
+  if (API && typeof API.connectWS === 'function') {
+    API.connectWS(function (msg) {
+      if (!msg || !msg.type) return
+      switch (msg.type) {
+        case 'agent_metrics': {
+          // 后端推送指标，合并进缓存
+          var data = msg.data || {}
+          var agentId = data.agent_id
+          if (agentId !== LOBSTER.agentId && agentId !== (CTX && CTX.agentId)) return
+          if (!LOBSTER.metrics) LOBSTER.metrics = { metrics: {}, recorded_at: null }
+          var incoming = data.metrics || {}
+          Object.keys(incoming).forEach(function (k) {
+            var v = incoming[k]
+            if (typeof v === 'number') LOBSTER.metrics.metrics[k] = v
+          })
+          LOBSTER.metrics.recorded_at = new Date().toISOString()
+          // 如果健康看板是打开的，实时重绘
+          if (healthModal && healthModal.classList.contains('open')) renderHealthPanel()
+          break
+        }
+        case 'agent_status': {
+          // 当前 agent 的 online/offline 状态变化（暂时不在 UI 上展示，仅记录）
+          break
+        }
+        case 'command_result': {
+          // 考试 / 学习 / 长任务 / chat 的结果推送（阶段 5 再接）
+          break
+        }
+        case 'subscribed':
+        case 'pong':
+          break
+        default:
+          break
+      }
+    })
+  }
 
   /* ═══ 页面可见性优化：标签页隐藏时暂停所有动画 ═══ */
   document.addEventListener('visibilitychange', function () {

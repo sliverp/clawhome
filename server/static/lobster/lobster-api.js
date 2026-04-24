@@ -118,6 +118,79 @@
     backToPicker() {
       window.location.href = '/lobster/'
     },
+
+    // ─── WebSocket 订阅（阶段4） ─────────────────────────
+    _ws: null,
+    _wsHandlers: [],
+    _wsReconnectTimer: null,
+    /**
+     * 建立到 /api/ws/dashboard 的 WebSocket 连接，并自动 subscribe 当前 agent。
+     * 重复调用会共用同一个连接。onMessage 被多个调用方注册时都会被广播。
+     */
+    connectWS(onMessage) {
+      if (typeof onMessage === 'function') this._wsHandlers.push(onMessage)
+      if (this._ws) return this._ws
+      this._openWS()
+      return this._ws
+    },
+
+    _openWS() {
+      const self = this
+      if (!self.token) return
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const url = proto + '//' + location.host + '/api/ws/dashboard?token=' + encodeURIComponent(self.token)
+      let ws
+      try {
+        ws = new WebSocket(url)
+      } catch (e) {
+        console.warn('[lobster-ws] new WebSocket failed:', e)
+        self._scheduleReconnect()
+        return
+      }
+      self._ws = ws
+
+      ws.addEventListener('open', () => {
+        // 订阅当前 agent（如果有）
+        if (self.agentId) {
+          try { ws.send(JSON.stringify({ type: 'subscribe', data: { agent_id: self.agentId } })) } catch (_) {}
+        }
+        // 发一次 ping 触发 pong，保持连接
+        self._pingTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            try { ws.send(JSON.stringify({ type: 'ping' })) } catch (_) {}
+          }
+        }, 25000)
+      })
+
+      ws.addEventListener('message', (ev) => {
+        let msg
+        try { msg = JSON.parse(ev.data) } catch (_) { return }
+        // pong/subscribed 这类协议消息交给业务层自行忽略
+        self._wsHandlers.forEach(h => {
+          try { h(msg) } catch (e) { console.warn('[lobster-ws] handler error:', e) }
+        })
+      })
+
+      ws.addEventListener('close', () => {
+        if (self._pingTimer) { clearInterval(self._pingTimer); self._pingTimer = null }
+        self._ws = null
+        self._scheduleReconnect()
+      })
+
+      ws.addEventListener('error', (e) => {
+        console.warn('[lobster-ws] error:', e)
+      })
+    },
+
+    _scheduleReconnect() {
+      const self = this
+      if (self._wsReconnectTimer) return
+      self._wsReconnectTimer = setTimeout(() => {
+        self._wsReconnectTimer = null
+        console.log('[lobster-ws] reconnecting...')
+        self._openWS()
+      }, 3000)
+    },
   }
 
   window.LobsterAPI = LobsterAPI
@@ -132,7 +205,7 @@
       'assets/phaser.min.js',
       'phaser-scenes.js?v=3.3',
       'sprite-animator.js',
-      'app.js?v=11.0',
+      'app.js?v=11.1',
     ]
     function loadNext(i) {
       if (i >= scripts.length) return

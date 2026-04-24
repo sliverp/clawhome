@@ -240,6 +240,7 @@ async def agent_ws(websocket: WebSocket):
                     await ws_manager.broadcast_to_user(
                         agent.user_id,
                         {"type": "command_result", "data": {"agent_id": agent.id, **data}},
+                        agent_id=agent.id,
                     )
 
     except WebSocketDisconnect:
@@ -283,15 +284,49 @@ async def dashboard_ws(websocket: WebSocket, token: str = Query(...)):
 
         ws_manager.connect_browser(user.id, websocket)
 
-        # Keep alive - browser sends ping, we send pong
+        # 消息循环：支持 ping/subscribe/unsubscribe
         while True:
             raw = await websocket.receive_text()
             try:
                 msg = json.loads(raw)
-                if msg.get("type") == "ping":
-                    await websocket.send_text(json.dumps({"type": "pong"}))
             except Exception:
-                pass
+                continue
+            mtype = msg.get("type")
+            if mtype == "ping":
+                try:
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+                except Exception:
+                    break
+            elif mtype == "subscribe":
+                data = msg.get("data") or {}
+                aid = data.get("agent_id")
+                if isinstance(aid, int):
+                    # 只允许订阅该用户名下的 agent
+                    owned = db.query(Agent).filter(
+                        Agent.id == aid, Agent.user_id == user.id
+                    ).first()
+                    if owned:
+                        ws_manager.subscribe_agent(websocket, aid)
+                        try:
+                            await websocket.send_text(json.dumps({
+                                "type": "subscribed",
+                                "data": {"agent_id": aid},
+                            }))
+                        except Exception:
+                            break
+                    else:
+                        try:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "data": {"code": "forbidden", "message": "Agent not owned"},
+                            }))
+                        except Exception:
+                            break
+            elif mtype == "unsubscribe":
+                data = msg.get("data") or {}
+                aid = data.get("agent_id")
+                if isinstance(aid, int):
+                    ws_manager.unsubscribe_agent(websocket, aid)
 
     except WebSocketDisconnect:
         pass

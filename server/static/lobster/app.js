@@ -1354,11 +1354,29 @@
       var orig = statusTextEl.textContent
       statusTextEl.textContent = '收到！正在回复…'
       if (curScene === SCENES.POND) triggerReaction()
-      setTimeout(function () {
-        statusTextEl.textContent = orig
-        addChatMessage('ai', '收到「' + v + '」，这是模拟回复。后续接入 AI 对话。')
-        openChatPanel('💬 回复', 3000)
-      }, 800)
+      // 真实链路：POST /agents/{id}/chat → client 跑 openclaw chat → command_result 走 WS 推回
+      if (API && typeof API.sendChat === 'function') {
+        // 记下 request_id 便于 WS 回包匹配
+        API.sendChat(v).then(function (res) {
+          // res = { request_id, status: "sent" }，AI 回复由 WS command_result 推
+          // 仍然显示一个等待提示
+          openChatPanel('💬 等待 AI 回复…', 0)
+        }).catch(function (err) {
+          statusTextEl.textContent = orig
+          addChatMessage('system', '发送失败：' + (err.message || err))
+          openChatPanel('💬 错误', 4000)
+        }).finally(function () {
+          // 让顶栏文案恢复（即使等回复，也不要一直挂着）
+          setTimeout(function () { statusTextEl.textContent = orig }, 1500)
+        })
+      } else {
+        // 兜底：API 不可用时退回模拟
+        setTimeout(function () {
+          statusTextEl.textContent = orig
+          addChatMessage('ai', '收到「' + v + '」（API 未就绪，模拟回复）')
+          openChatPanel('💬 回复', 3000)
+        }, 800)
+      }
     }
   }
 
@@ -1579,7 +1597,8 @@
           break
         }
         case 'command_result': {
-          // chat 等其它命令的结果（exam/study/work 已经在 *_status 里处理了）
+          // chat 等命令的结果（exam/study/work 已在 *_status 里处理）
+          handleCommandResultMsg(msg.data || {})
           break
         }
         case 'subscribed':
@@ -1676,5 +1695,24 @@
       addChatMessage('system', '任务已中断：' + (d.reason || '未知原因'))
       setStatus(TASK_STATUS.IDLE)
     }
+  }
+
+  /**
+   * 处理 command_result 消息（chat 命令的回复等）
+   * exam/study/work 由 *_status 处理，这里专门管 chat
+   */
+  function handleCommandResultMsg(d) {
+    if (!d || (d.agent_id !== LOBSTER.agentId && d.agent_id !== (CTX && CTX.agentId))) return
+    var output = d.output
+    var text = ''
+    if (typeof output === 'string') {
+      text = output
+    } else if (output && typeof output === 'object') {
+      text = output.text || output.message || ''
+      if (!text && output.error) text = '⚠️ ' + output.error
+    }
+    if (!text) return  // exam/study/work 的回包没有展示价值，跳过
+    addChatMessage('ai', text)
+    openChatPanel('💬 回复', 6000)
   }
 })()

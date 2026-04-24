@@ -125,6 +125,16 @@
         body: JSON.stringify({ task_description: taskDescription }),
       })
     },
+    /** 发送一条聊天消息到 client（走 openclaw chat 命令） */
+    sendChat(message, agentName, id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: message,
+          agent_name: agentName || 'main',
+        }),
+      })
+    },
 
     logout() {
       localStorage.removeItem(TOKEN_KEY)
@@ -225,7 +235,7 @@
       'assets/phaser.min.js',
       'phaser-scenes.js?v=3.3',
       'sprite-animator.js',
-      'app.js?v=12.0',
+      'app.js?v=12.1',
     ]
     function loadNext(i) {
       if (i >= scripts.length) return

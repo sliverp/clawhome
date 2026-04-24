@@ -523,34 +523,25 @@
       return
     }
 
-    // 插入用户确认消息
     addChatMessage('user', '同意')
-
-    // 更新考试状态
     examState = EXAM_STATE.RUNNING
-
-    // 关闭聊天浮层
     closeChatPanel()
 
     // 轻量转场 → 切到森林
-    // 设置状态为考试中（会自动切到森林场景）
     setTimeout(function () {
       setStatus(TASK_STATUS.EXAM)
       if (examStatusLabel) examStatusLabel.textContent = '专注答题中…'
 
-      // 根据模式启动结果等待
-      if (DEMO_CONFIG.examDemoMode) {
-        // Demo 模式：examDemoDuration 后自动完成
-        examTimer = setTimeout(function () {
-          finishExam()
-        }, DEMO_CONFIG.examDemoDuration)
-      } else {
-        // 正式模式：设置超时定时器
-        examTimeoutTimer = setTimeout(function () {
-          if (examState === EXAM_STATE.RUNNING) {
-            showExamTimeout()
-          }
-        }, DEMO_CONFIG.examRealTimeout)
+      // 真实链路：调用后端 POST /agents/{id}/exam，结果通过 WS exam_status 推送
+      if (API && typeof API.startExam === 'function') {
+        API.startExam('basic').then(function (s) {
+          console.log('[考试链路] 后端已创建 exam_session id=' + s.id)
+        }).catch(function (err) {
+          console.warn('[考试链路] 启动失败:', err)
+          addChatMessage('system', '考试启动失败：' + (err.message || err))
+          setStatus(TASK_STATUS.IDLE)
+          examState = EXAM_STATE.IDLE
+        })
       }
     }, 300)
   }
@@ -718,12 +709,16 @@
     setStatus(TASK_STATUS.STUDY)
     if (farmStatusLabel) farmStatusLabel.textContent = '学习中…'
 
-    if (DEMO_CONFIG.isDemo) {
-      studyTimer = setTimeout(() => {
-        finishStudy()
-      }, DEMO_CONFIG.studyResultTimeoutDemo)
+    // 真实链路：调后端，结果通过 WS study_status 推送
+    if (API && typeof API.startStudy === 'function') {
+      API.startStudy(null).then(function (s) {
+        console.log('[学习链路] 后端已创建 study_session id=' + s.id)
+      }).catch(function (err) {
+        console.warn('[学习链路] 启动失败:', err)
+        addChatMessage('system', '学习启动失败：' + (err.message || err))
+        setStatus(TASK_STATUS.IDLE)
+      })
     }
-    // 正式模式等后端 callback
   }
 
   function finishStudy() {
@@ -1342,10 +1337,19 @@
     if (isLongTask(v)) {
       if (curScene === SCENES.POND) triggerReaction()
       statusTextEl.textContent = '收到长任务，准备出发…'
-      setTimeout(function () { startWork() }, 800)
-      if (DEMO_CONFIG.isDemo) {
-        setTimeout(function () { finishWork() }, DEMO_CONFIG.workResultTimeoutDemo + 800)
-      }
+      setTimeout(function () {
+        startWork()
+        // 真实链路：调后端 work，结果通过 WS work_status 推送
+        if (API && typeof API.startWork === 'function') {
+          API.startWork(v).then(function (s) {
+            console.log('[长任务] 后端已创建 work_session id=' + s.id)
+          }).catch(function (err) {
+            console.warn('[长任务] 启动失败:', err)
+            addChatMessage('system', '任务启动失败：' + (err.message || err))
+            setStatus(TASK_STATUS.IDLE)
+          })
+        }
+      }, 800)
     } else {
       var orig = statusTextEl.textContent
       statusTextEl.textContent = '收到！正在回复…'
@@ -1555,8 +1559,27 @@
           // 当前 agent 的 online/offline 状态变化（暂时不在 UI 上展示，仅记录）
           break
         }
+        case 'exam_status': {
+          handleExamStatusMsg(msg.data || {})
+          break
+        }
+        case 'study_status': {
+          handleStudyStatusMsg(msg.data || {})
+          break
+        }
+        case 'work_status': {
+          handleWorkStatusMsg(msg.data || {})
+          break
+        }
+        case 'diary_new': {
+          // 后端写入了新日记，未读角标 +1
+          setUnread(true)
+          // 同步刷新缓存（懒：等下次打开日记面板再拉）
+          LOBSTER.diary = null
+          break
+        }
         case 'command_result': {
-          // 考试 / 学习 / 长任务 / chat 的结果推送（阶段 5 再接）
+          // chat 等其它命令的结果（exam/study/work 已经在 *_status 里处理了）
           break
         }
         case 'subscribed':
@@ -1592,5 +1615,66 @@
 
   console.log('%c🦞 LightClaw v10.2 · 性能优化版', 'color:#6ee7b7;font-size:14px;font-weight:bold;')
   console.log('优化项: Phaser 懒加载 · 场景级暂停/恢复 · 页面可见性感知')
-  console.log('考试配置: examDemoMode=' + DEMO_CONFIG.examDemoMode + ', examDemoDuration=' + DEMO_CONFIG.examDemoDuration + 'ms')
+
+  /* ═══ 阶段5 WS 推送处理：exam/study/work_status ═══ */
+  function handleExamStatusMsg(d) {
+    if (!d || (d.agent_id !== LOBSTER.agentId && d.agent_id !== (CTX && CTX.agentId))) return
+    var phase = d.phase
+    if (phase === 'completed') {
+      examState = EXAM_STATE.COMPLETED
+      var score = d.score != null ? d.score : '—'
+      addChatMessage('ai', '🎓 考试结果已生成\n得分 ' + score + ' / 100')
+      onTaskComplete(TASK_STATUS.EXAM_DONE, '🎓 考试结果',
+        '🎓 考试结果已生成\n得分 ' + score + ' / 100\n\n证书已放入证书夹。', 6000)
+      // 异步刷新证书 / 日记缓存
+      if (API) {
+        API.getCertificates().then(function (c) { LOBSTER.certificates = c }).catch(function () {})
+        API.getDiary(null, 20).then(function (d2) { LOBSTER.diary = d2; if (d2 && d2.unread_count > 0) setUnread(true) }).catch(function () {})
+      }
+    } else if (phase === 'interrupted') {
+      examState = EXAM_STATE.INTERRUPTED
+      addChatMessage('system', '考试已中断：' + (d.reason || '未知原因'))
+      setStatus(TASK_STATUS.IDLE)
+    } else if (phase === 'running') {
+      // 已经在 examConfirmStart 里 setStatus 过了，这里不动
+    }
+  }
+
+  function handleStudyStatusMsg(d) {
+    if (!d || (d.agent_id !== LOBSTER.agentId && d.agent_id !== (CTX && CTX.agentId))) return
+    if (d.phase === 'completed') {
+      var skill = d.skill || ''
+      var exp = d.exp != null ? d.exp : 0
+      var msg = '📖 学习任务完成'
+      if (skill) msg += '\n已掌握：' + skill
+      if (exp) msg += '\n经验 +' + exp
+      stopFarmAnimation()
+      if (farmStatusLabel) farmStatusLabel.textContent = '学习完毕！'
+      onTaskComplete(TASK_STATUS.STUDY_DONE, '📖 学习结果', msg, 5000)
+      // 刷新技能树缓存
+      if (API) {
+        API.getSkills().then(function (s) { LOBSTER.skills = s }).catch(function () {})
+        API.getDiary(null, 20).then(function (d2) { LOBSTER.diary = d2; if (d2 && d2.unread_count > 0) setUnread(true) }).catch(function () {})
+      }
+    } else if (d.phase === 'interrupted') {
+      addChatMessage('system', '学习已中断：' + (d.reason || '未知原因'))
+      setStatus(TASK_STATUS.IDLE)
+    }
+  }
+
+  function handleWorkStatusMsg(d) {
+    if (!d || (d.agent_id !== LOBSTER.agentId && d.agent_id !== (CTX && CTX.agentId))) return
+    if (d.phase === 'completed') {
+      var summary = d.summary || '任务执行完成'
+      stopFarmAnimation()
+      if (farmStatusLabel) farmStatusLabel.textContent = '任务执行完毕！'
+      onTaskComplete(TASK_STATUS.WORK_DONE, '⚡ 任务结果', '⚡ ' + summary, 5000)
+      if (API) {
+        API.getDiary(null, 20).then(function (d2) { LOBSTER.diary = d2; if (d2 && d2.unread_count > 0) setUnread(true) }).catch(function () {})
+      }
+    } else if (d.phase === 'interrupted') {
+      addChatMessage('system', '任务已中断：' + (d.reason || '未知原因'))
+      setStatus(TASK_STATUS.IDLE)
+    }
+  }
 })()

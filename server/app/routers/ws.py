@@ -237,6 +237,17 @@ async def agent_ws(websocket: WebSocket):
             elif msg_type == "command_result":
                 logger.info("Command result from agent %s: %s", agent.id if agent else "?", data)
                 if agent:
+                    # 先尝试交给 session_dispatch 处理（exam/study/work）
+                    request_id = data.get("request_id") if isinstance(data, dict) else None
+                    output = data.get("output") if isinstance(data, dict) else None
+                    handled = False
+                    if request_id:
+                        try:
+                            from app.services.session_dispatch import handle_command_result
+                            handled = await handle_command_result(db, agent, request_id, output)
+                        except Exception as exc:
+                            logger.exception("session_dispatch failed: %s", exc)
+                    # 总是把 raw command_result 也广播一份给浏览器（chat 等场景仍然需要）
                     await ws_manager.broadcast_to_user(
                         agent.user_id,
                         {"type": "command_result", "data": {"agent_id": agent.id, **data}},

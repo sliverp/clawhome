@@ -106,6 +106,26 @@
       return apiFetch('/agents/' + (id || this.agentId) + '/alerts' + q)
     },
 
+    // ─── 阶段5：考试 / 学习 / 长任务 ─────────────────────
+    startExam(examType, id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/exam', {
+        method: 'POST',
+        body: JSON.stringify({ exam_type: examType || 'basic' }),
+      })
+    },
+    startStudy(skillKey, id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/study', {
+        method: 'POST',
+        body: JSON.stringify({ skill_key: skillKey || null }),
+      })
+    },
+    startWork(taskDescription, id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/work', {
+        method: 'POST',
+        body: JSON.stringify({ task_description: taskDescription }),
+      })
+    },
+
     logout() {
       localStorage.removeItem(TOKEN_KEY)
       window.location.replace('/login')
@@ -205,7 +225,7 @@
       'assets/phaser.min.js',
       'phaser-scenes.js?v=3.3',
       'sprite-animator.js',
-      'app.js?v=11.1',
+      'app.js?v=12.0',
     ]
     function loadNext(i) {
       if (i >= scripts.length) return

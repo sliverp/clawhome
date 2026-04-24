@@ -15,6 +15,9 @@ from app.routers.skills import router as skills_router
 from app.routers.diary import router as diary_router
 from app.routers.certificate import router as certificate_router
 from app.routers.alerts import router as alerts_router
+from app.routers.exam import router as exam_router
+from app.routers.study import router as study_router
+from app.routers.work import router as work_router
 
 # Lobster 静态页目录（clawgame 前端迁移而来）
 LOBSTER_STATIC_DIR = Path(__file__).resolve().parent.parent / "static" / "lobster"
@@ -44,6 +47,9 @@ app.include_router(skills_router)
 app.include_router(diary_router)
 app.include_router(certificate_router)
 app.include_router(alerts_router)
+app.include_router(exam_router)
+app.include_router(study_router)
+app.include_router(work_router)
 
 # 挂载 Lobster 静态页到 /lobster
 if LOBSTER_STATIC_DIR.is_dir():

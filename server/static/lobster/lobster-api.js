@@ -132,7 +132,7 @@
       'assets/phaser.min.js',
       'phaser-scenes.js?v=3.3',
       'sprite-animator.js',
-      'app.js?v=10.3',
+      'app.js?v=11.0',
     ]
     function loadNext(i) {
       if (i >= scripts.length) return

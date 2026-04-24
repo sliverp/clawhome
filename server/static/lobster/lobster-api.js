@@ -63,6 +63,49 @@
     deleteAgent(id) {
       return apiFetch('/agents/' + id, { method: 'DELETE' })
     },
+
+    // ─── 龙虾业务数据（阶段3） ──────────────────────────
+    getProfile(id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/profile')
+    },
+    updateProfile(body, id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      })
+    },
+    updateScene(scene, id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/scene', {
+        method: 'POST',
+        body: JSON.stringify({ scene }),
+      })
+    },
+    getSkills(id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/skills')
+    },
+    getDiary(id, limit) {
+      const q = limit ? ('?limit=' + limit) : ''
+      return apiFetch('/agents/' + (id || this.agentId) + '/diary' + q)
+    },
+    markDiaryRead(diaryId, id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/diary/' + diaryId + '/read', {
+        method: 'PATCH',
+      })
+    },
+    getCertificates(id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/certificates')
+    },
+    getLatestMetrics(id) {
+      // 已存在的端点 /agents/{id}/metrics/latest
+      return apiFetch('/agents/' + (id || this.agentId) + '/metrics/latest')
+    },
+    getAlerts(id, resolved) {
+      let q = ''
+      if (resolved === true) q = '?resolved=true'
+      else if (resolved === false) q = '?resolved=false'
+      return apiFetch('/agents/' + (id || this.agentId) + '/alerts' + q)
+    },
+
     logout() {
       localStorage.removeItem(TOKEN_KEY)
       window.location.replace('/login')

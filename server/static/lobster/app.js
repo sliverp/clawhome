@@ -6,15 +6,72 @@
 ;(function () {
   'use strict'
 
-  /* ═══ Demo 配置项（正式接后端时替换为真实接口） ═══ */
+  /* ═══ 后端接入上下文（lobster-api.js 注入） ═══ */
+  const API = window.LobsterAPI || null
+  const CTX = window.LOBSTER_CTX || null
+  // 从后端拉到的龙虾档案 / 技能树 / 日记 / 证书缓存
+  const LOBSTER = {
+    profile: null,         // AgentProfileOut
+    skills: null,          // [{dimension, icon, name, skills:[...]}]
+    diary: null,           // { items, unread_count }
+    certificates: null,    // [AgentCertificateOut]
+    metrics: null,         // { metrics: {metric_key: value}, recorded_at, ... }
+  }
+  // 数字格式化 / 秒转人类可读
+  function fmtNum(n) {
+    if (n == null) return '—'
+    n = Math.round(Number(n))
+    return n.toLocaleString('zh-CN')
+  }
+  function fmtUptime(sec) {
+    if (sec == null) return '—'
+    sec = Math.max(0, Math.round(Number(sec)))
+    const d = Math.floor(sec / 86400)
+    const h = Math.floor((sec % 86400) / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    if (d > 0) return d + 'd ' + h + 'h'
+    if (h > 0) return h + 'h ' + m + 'm'
+    return m + 'm'
+  }
+  function fmtDateTime(iso) {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return String(iso)
+    const pad = (n) => String(n).padStart(2, '0')
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+  }
+  function sceneLabel(scene) {
+    return { pond: '池塘', forest: '森林', farm: '菜地' }[scene] || (scene || '—')
+  }
+
+  /* ═══ 龙虾档案预取（在 DOM 初始化之前并行拉取） ═══ */
+  function preloadLobsterData() {
+    if (!API || !CTX) return Promise.resolve()
+    const pick = (p) => p.catch((err) => { console.warn('lobster preload:', err); return null })
+    return Promise.all([
+      pick(API.getProfile()),
+      pick(API.getSkills()),
+      pick(API.getDiary(null, 20)),
+      pick(API.getCertificates()),
+      pick(API.getLatestMetrics()),
+    ]).then((arr) => {
+      LOBSTER.profile = arr[0]
+      LOBSTER.skills = arr[1]
+      LOBSTER.diary = arr[2]
+      LOBSTER.certificates = arr[3]
+      LOBSTER.metrics = arr[4]
+    })
+  }
+
+  /* ═══ Demo 配置项（阶段 5 接考试/学习/长任务后彻底删除） ═══ */
   const DEMO_CONFIG = {
     examDemoMode: true,              // true = demo模式，false = 正式产品模式
     examDemoDuration: 15000,         // demo 模式下考试持续时间 (15s)
     examRealTimeout: 60000,          // 正式模式下考试超时阈值 (60s)
     studyResultTimeoutDemo: 8000,    // demo 模式下学习结果返回时间 (8s)
     workResultTimeoutDemo: 6000,     // demo 模式下长任务结果返回时间 (6s)
-    isDemo: true,                     // 全局 demo 开关（学习/工作等）
-    shrimpName: '小钳',               // 龙虾的名字
+    isDemo: true,                    // 全局 demo 开关（学习/工作等）
   }
 
   /* ═══ 考试预设文案 ═══ */
@@ -151,139 +208,39 @@
   const EVT_CARDS = {
     'birth': {
       type: 'birth',
-      html: '<div class="birth-card">'
-        + '<button class="birth-card__x" data-event-close aria-label="关闭">&times;</button>'
-        + '<span class="birth-card__sparkle">📜</span>'
-        + '<h2 class="birth-card__title">出生证明</h2>'
-        + '<p class="birth-card__subtitle">从今天起，它会在一次次对话与任务里，慢慢变得更懂你。</p>'
-        + '<div class="birth-card__info">'
-        + '<div class="birth-card__row"><span class="birth-card__label">名字</span><span class="birth-card__value">小钳</span></div>'
-        + '<div class="birth-card__row"><span class="birth-card__label">出生时间</span><span class="birth-card__value">2026-03-28 14:30</span></div>'
-        + '<div class="birth-card__row"><span class="birth-card__label">初始性格</span><span class="birth-card__value">认真型</span></div>'
-        + '<div class="birth-card__row"><span class="birth-card__label">初始倾向</span><span class="birth-card__value">执行型</span></div>'
-        + '<div class="birth-card__row"><span class="birth-card__label">当前阶段</span><span class="birth-card__value">🦐 幼虾</span></div>'
-        + '</div>'
-        + '<button class="birth-card__close-btn" data-event-close><span>知道了</span></button>'
-        + '</div>',
+      // HTML 在 openEventModal 里基于 LOBSTER.profile 动态构建（旧的硬编码字面值已删除）
     },
     'exam-cert': { type: 'generic', icon: '🎓', title: '考试证书', body: '恭喜！龙虾通过了考试，获得新证书。成绩单已放入证书夹。' },
     'skill-unlock': { type: 'generic', icon: '⚡', title: '技能解锁', body: '龙虾解锁了一项新技能！' },
   }
 
+  function buildBirthCardHtml() {
+    const p = LOBSTER.profile
+    const name = p ? p.shrimp_name : '—'
+    const birthTime = p ? fmtDateTime(p.birth_time) : '—'
+    const personality = p ? p.initial_personality : '—'
+    const tendency = p ? p.initial_tendency : '—'
+    const stage = p && p.stage === 'adult' ? '🦞 成虾' : '🦐 幼虾'
+    return '<div class="birth-card">'
+      + '<button class="birth-card__x" data-event-close aria-label="关闭">&times;</button>'
+      + '<span class="birth-card__sparkle">📜</span>'
+      + '<h2 class="birth-card__title">出生证明</h2>'
+      + '<p class="birth-card__subtitle">从今天起，它会在一次次对话与任务里，慢慢变得更懂你。</p>'
+      + '<div class="birth-card__info">'
+      + '<div class="birth-card__row"><span class="birth-card__label">名字</span><span class="birth-card__value">' + esc(name) + '</span></div>'
+      + '<div class="birth-card__row"><span class="birth-card__label">出生时间</span><span class="birth-card__value">' + esc(birthTime) + '</span></div>'
+      + '<div class="birth-card__row"><span class="birth-card__label">初始性格</span><span class="birth-card__value">' + esc(personality) + '</span></div>'
+      + '<div class="birth-card__row"><span class="birth-card__label">初始倾向</span><span class="birth-card__value">' + esc(tendency) + '</span></div>'
+      + '<div class="birth-card__row"><span class="birth-card__label">当前阶段</span><span class="birth-card__value">' + esc(stage) + '</span></div>'
+      + '</div>'
+      + '<button class="birth-card__close-btn" data-event-close><span>知道了</span></button>'
+      + '</div>'
+  }
+
   const REACTIONS = ['roll', 'wiggle', 'bubble']
   const BUBBLES = ['收到~', '嗯嗯！', '好的呀 🫧', '想想看…', '马上来~', '这个我会！', '呼噜噜 💭']
 
-  /* ═══ 技能树数据（7 维度，后端负责归类） ═══ */
-  const SKILL_TREE_DATA = [
-    {
-      id: 'basic',
-      icon: '📚',
-      name: '基础常识',
-      skills: [
-        { name: '日常问答', level: 3, unlocked: true, primary_skill: 'basic', secondary_skills: [] },
-        { name: '常识判断', level: 2, unlocked: true, primary_skill: 'basic', secondary_skills: ['reasoning'] },
-        { name: '百科知识', level: 0, unlocked: false, primary_skill: 'basic', secondary_skills: [] },
-      ]
-    },
-    {
-      id: 'retrieval',
-      icon: '🔍',
-      name: '信息检索',
-      skills: [
-        { name: '信息检索', level: 3, unlocked: true, primary_skill: 'retrieval', secondary_skills: [] },
-        { name: '数据分析', level: 1, unlocked: true, primary_skill: 'retrieval', secondary_skills: ['reasoning'] },
-        { name: '竞品分析', level: 1, unlocked: true, primary_skill: 'retrieval', secondary_skills: ['expression'] },
-        { name: '趋势预测', level: 0, unlocked: false, primary_skill: 'retrieval', secondary_skills: ['reasoning'] },
-      ]
-    },
-    {
-      id: 'reasoning',
-      icon: '🧠',
-      name: '复杂推理',
-      skills: [
-        { name: '逻辑推理', level: 2, unlocked: true, primary_skill: 'reasoning', secondary_skills: [] },
-        { name: '深度推理', level: 0, unlocked: false, primary_skill: 'reasoning', secondary_skills: [] },
-        { name: '多步推演', level: 0, unlocked: false, primary_skill: 'reasoning', secondary_skills: ['tools'] },
-      ]
-    },
-    {
-      id: 'tools',
-      icon: '🔧',
-      name: '工具调用',
-      skills: [
-        { name: '报告生成', level: 1, unlocked: true, primary_skill: 'tools', secondary_skills: ['expression'] },
-        { name: '文件处理', level: 0, unlocked: false, primary_skill: 'tools', secondary_skills: [] },
-        { name: 'API 调用', level: 0, unlocked: false, primary_skill: 'tools', secondary_skills: ['system'] },
-      ]
-    },
-    {
-      id: 'system',
-      icon: '🖥️',
-      name: '系统驾驭',
-      skills: [
-        { name: '环境配置', level: 0, unlocked: false, primary_skill: 'system', secondary_skills: [] },
-        { name: '权限管理', level: 0, unlocked: false, primary_skill: 'system', secondary_skills: [] },
-        { name: '多模型协调', level: 0, unlocked: false, primary_skill: 'system', secondary_skills: ['automation'] },
-      ]
-    },
-    {
-      id: 'automation',
-      icon: '⚡',
-      name: '执行与自动化',
-      skills: [
-        { name: '任务拆解', level: 2, unlocked: true, primary_skill: 'automation', secondary_skills: ['reasoning'] },
-        { name: '自动调度', level: 0, unlocked: false, primary_skill: 'automation', secondary_skills: ['system'] },
-        { name: '批量处理', level: 0, unlocked: false, primary_skill: 'automation', secondary_skills: [] },
-      ]
-    },
-    {
-      id: 'expression',
-      icon: '🎨',
-      name: '表达与创作',
-      skills: [
-        { name: '文案写作', level: 2, unlocked: true, primary_skill: 'expression', secondary_skills: [] },
-        { name: '视觉排版', level: 0, unlocked: false, primary_skill: 'expression', secondary_skills: [] },
-        { name: '创意策划', level: 0, unlocked: false, primary_skill: 'expression', secondary_skills: ['reasoning'] },
-        { name: '风格模仿', level: 0, unlocked: false, primary_skill: 'expression', secondary_skills: [] },
-      ]
-    },
-  ]
-
-  /* ═══ 健康看板数据（5 区块，后端直接替换） ═══ */
-  const HEALTH_DATA = {
-    // 区块 1：当前状态
-    current: {
-      state: '待机中',       // 待机中 / 运行中 / 学习中 / 考试中 / 异常中
-      scene: '池塘',         // 池塘 / 森林 / 菜地
-      model: 'GPT-4o',
-      uptime: '2h 15m',
-    },
-    // 区块 2：活跃情况
-    activity: {
-      activeSessions: 2,
-      currentTask: '无',
-      todayTasks: 5,
-    },
-    // 区块 3：Token 概览
-    tokens: {
-      total: '87,650',
-      daily: '~8,700',
-      today: '12,340',
-    },
-    // 区块 4：趋势图（后端替换真实数据）
-    trend: {
-      dailyData: [4200, 6800, 9100, 7500, 8200, 12340, 0],
-      dailyLabels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-      weeklyData: [42000, 56000, 61000, 87650],
-      weeklyLabels: ['第1周', '第2周', '第3周', '第4周'],
-    },
-    // 区块 5：结构分布
-    distribution: {
-      dialog: 45,     // 对话消耗 %
-      execution: 35,  // 执行消耗 %
-      tools: 20,      // 工具/检索消耗 %
-    },
-  }
+  /* ═══ 技能树 / 健康看板 数据已移至后端（阶段 3 接入），从 LOBSTER.* 缓存读取 ═══ */
 
   /* ═══ 全局状态 ═══ */
   let curScene = SCENES.POND, curStatus = TASK_STATUS.IDLE, diaryUnread = false
@@ -378,6 +335,10 @@
     // 通知 Phaser 和 SpriteAnimator 暂停非活跃场景、激活当前场景
     if (window._phaserSwitchScene) window._phaserSwitchScene(name)
     if (window._spriteAnimSwitchScene) window._spriteAnimSwitchScene(name)
+    // 上报当前场景到后端（静默失败）
+    if (API) {
+      API.updateScene(name).then(function (p) { LOBSTER.profile = p }).catch(function () {})
+    }
   }
 
   async function switchScene(target) {
@@ -1054,42 +1015,68 @@
   var diaryClose = $('#diary-modal-close'), diaryBD = $('#diary-modal-bd')
   var diaryPrev = $('#diary-prev'), diaryNext = $('#diary-next'), diaryIndicator = $('#diary-indicator')
 
-  var DIARY_ENTRIES = [
-    { date: '2026-03-30 22:15', title: '今天有点忙', body: '主人今天连续给了三个长任务，我在菜地忙了好久。不过都顺利完成了，感觉自己的数据分析能力又进步了一点。', tag: '成长复盘' },
-    { date: '2026-03-29 21:40', title: '发现了新偏好', body: '主人似乎特别喜欢看竞品分析类的报告，最近连续三次都让我做这个方向的任务。我记住了，下次可以主动推荐。', tag: '偏好变化' },
-    { date: '2026-03-28 23:05', title: '第一天', body: '今天是我出生的日子。主人给我取名叫小钳，还带我熟悉了池塘。虽然什么都还不太懂，但我会努力学习的！', tag: '第一天' },
-  ]
-
+  /* ═══ 成长日记（来自后端 /agents/{id}/diary） ═══ */
   var diaryIndex = 0
 
+  function getDiaryItems() {
+    return (LOBSTER.diary && LOBSTER.diary.items) || []
+  }
+
   function renderDiaryPage() {
-    var entry = DIARY_ENTRIES[diaryIndex]
+    var items = getDiaryItems()
+    if (items.length === 0) {
+      diaryBody.innerHTML = '<div class="diary-page"><p class="diary-page__body">还没有日记呢～</p></div>'
+      diaryIndicator.textContent = '0 / 0'
+      diaryPrev.disabled = true
+      diaryNext.disabled = true
+      return
+    }
+    var entry = items[diaryIndex]
     if (!entry) return
     diaryBody.innerHTML =
       '<div class="diary-page">'
-      + '<div class="diary-page__date">' + esc(entry.date) + '</div>'
+      + '<div class="diary-page__date">' + esc(fmtDateTime(entry.diary_date)) + '</div>'
       + (entry.title ? '<h4 class="diary-page__title">' + esc(entry.title) + '</h4>' : '')
       + '<p class="diary-page__body">' + esc(entry.body) + '</p>'
-      + '<span class="diary-page__tag">' + esc(entry.tag) + '</span>'
+      + '<span class="diary-page__tag">' + esc(entry.tag || '') + '</span>'
       + '</div>'
-    diaryIndicator.textContent = (diaryIndex + 1) + ' / ' + DIARY_ENTRIES.length
+    diaryIndicator.textContent = (diaryIndex + 1) + ' / ' + items.length
     diaryPrev.disabled = diaryIndex <= 0
-    diaryNext.disabled = diaryIndex >= DIARY_ENTRIES.length - 1
+    diaryNext.disabled = diaryIndex >= items.length - 1
   }
 
   function openDiaryModal() {
     closeAllContainers('diary')
     diaryIndex = 0
-    renderDiaryPage()
+    // 每次打开重新拉一下（保证新写入的日记能看到）
+    if (API) {
+      API.getDiary(null, 20).then(function (res) {
+        LOBSTER.diary = res
+        renderDiaryPage()
+        markAllDiaryAsRead()
+      }).catch(function () { renderDiaryPage() })
+    } else {
+      renderDiaryPage()
+    }
     diaryModal.classList.add('open')
     setUnread(false)
+  }
+
+  function markAllDiaryAsRead() {
+    if (!API || !LOBSTER.diary) return
+    var unread = (LOBSTER.diary.items || []).filter(function (it) { return it.is_unread })
+    unread.forEach(function (it) {
+      API.markDiaryRead(it.id).catch(function () {})
+      it.is_unread = false
+    })
+    LOBSTER.diary.unread_count = 0
   }
   function closeDiaryModal() { diaryModal.classList.remove('open') }
 
   diaryClose.addEventListener('click', closeDiaryModal)
   diaryBD.addEventListener('click', closeDiaryModal)
   diaryPrev.addEventListener('click', function () { if (diaryIndex > 0) { diaryIndex--; renderDiaryPage() } })
-  diaryNext.addEventListener('click', function () { if (diaryIndex < DIARY_ENTRIES.length - 1) { diaryIndex++; renderDiaryPage() } })
+  diaryNext.addEventListener('click', function () { var items = getDiaryItems(); if (diaryIndex < items.length - 1) { diaryIndex++; renderDiaryPage() } })
 
   /* ═══ 成长档案弹层 ═══ */
   function openGrowthModal() {
@@ -1115,20 +1102,32 @@
   function renderSkillTreeTab() {
     var container = document.querySelector('[data-panel="skill"] .growth-skill-tree')
     if (!container) return
+    var groups = LOBSTER.skills
+    if (!groups) {
+      container.innerHTML = '<div class="growth-skill-empty">技能树加载中...</div>'
+      // 懒加载兜底：首次打开就拉
+      if (API) {
+        API.getSkills().then(function (s) { LOBSTER.skills = s; renderSkillTreeTab() }).catch(function (err) {
+          container.innerHTML = '<div class="growth-skill-empty">加载失败：' + esc(err.message || err) + '</div>'
+        })
+      }
+      return
+    }
     var html = ''
-    SKILL_TREE_DATA.forEach(function (group) {
-      html += '<div class="growth-skill-group" data-skill-group="' + group.id + '">'
-        + '<h4 class="growth-skill-group__title"><span class="growth-skill-group__icon">' + group.icon + '</span>' + esc(group.name) + '</h4>'
+    groups.forEach(function (group) {
+      html += '<div class="growth-skill-group" data-skill-group="' + esc(group.dimension) + '">'
+        + '<h4 class="growth-skill-group__title"><span class="growth-skill-group__icon">' + esc(group.icon || '✨') + '</span>' + esc(group.name) + '</h4>'
         + '<div class="growth-skill-group__tags">'
-      group.skills.forEach(function (skill) {
+      ;(group.skills || []).forEach(function (skill) {
+        var secondary = (skill.secondary_skills || []).join(',')
         if (skill.unlocked) {
-          html += '<span class="growth-skill-tag" data-primary-skill="' + (skill.primary_skill || '') + '" data-secondary-skills="' + (skill.secondary_skills || []).join(',') + '">'
-            + esc(skill.name)
-            + ' <em>Lv.' + skill.level + '</em>'
+          html += '<span class="growth-skill-tag" data-primary-skill="' + esc(group.dimension) + '" data-secondary-skills="' + esc(secondary) + '">'
+            + esc(skill.skill_name)
+            + ' <em>Lv.' + (skill.level || 0) + '</em>'
             + '</span>'
         } else {
-          html += '<span class="growth-skill-tag growth-skill-tag--locked" data-primary-skill="' + (skill.primary_skill || '') + '">'
-            + esc(skill.name)
+          html += '<span class="growth-skill-tag growth-skill-tag--locked" data-primary-skill="' + esc(group.dimension) + '">'
+            + esc(skill.skill_name)
             + '</span>'
         }
       })
@@ -1153,55 +1152,86 @@
   var healthClose = $('#health-modal-close'), healthBD = $('#health-modal-bd')
 
   function renderHealthPanel() {
-    var d = HEALTH_DATA
+    // 真实数据来源：
+    // - LOBSTER.metrics.metrics: { cpu_percent, memory_mb, uptime, token_total, ... }
+    // - LOBSTER.profile: 当前场景、成长阶段
+    // - CTX.agent.metadata_.openclaw.models.active_model: 使用的模型
+    var m = (LOBSTER.metrics && LOBSTER.metrics.metrics) || {}
+    var profile = LOBSTER.profile || {}
+    var agentMeta = (CTX && CTX.agent && CTX.agent.metadata_) || {}
+    var ocMeta = (agentMeta.openclaw && agentMeta.openclaw.models) || {}
+    var stateText = { idle: '待机中', study: '学习中', 'study-done': '学习完毕',
+      'exam-waiting': '等待考试确认', exam: '考试中', 'exam-done': '考试完毕',
+      working: '任务执行中', alert: '异常告警', recovering: '异常已恢复',
+    }[curStatus] || '待机中'
+    var modelName = ocMeta.active_model || ocMeta.configured_primary || '未配置'
+
+    // 活跃情况：从 metrics 推
+    var activeSessions = Math.round(m.session_count || 0)
+    var todayTasks = Math.round(m.conversation_count || 0)
+    var currentTaskText = curStatus === 'idle' ? '无' : stateText
+
+    // Token 概览
+    var totalToken = m.token_total || 0
+    var inputToken = m.token_input || 0
+    var outputToken = m.token_output || 0
+
     var html = ''
 
     // 区块 1：当前状态
     html += '<div class="health-section">'
       + '<h4 class="health-section__title">当前状态</h4>'
       + '<div class="health-grid">'
-      + '<div class="health-item"><span class="health-item__label">龙虾状态</span><span class="health-item__value health-item__value--ok">🟢 ' + esc(d.current.state) + '</span></div>'
-      + '<div class="health-item"><span class="health-item__label">当前场景</span><span class="health-item__value">' + esc(d.current.scene) + '</span></div>'
-      + '<div class="health-item"><span class="health-item__label">使用的模型</span><span class="health-item__value">' + esc(d.current.model) + '</span></div>'
-      + '<div class="health-item"><span class="health-item__label">运行时长</span><span class="health-item__value health-item__value--dim">' + esc(d.current.uptime) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">龙虾状态</span><span class="health-item__value health-item__value--ok">🟢 ' + esc(stateText) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">当前场景</span><span class="health-item__value">' + esc(sceneLabel(profile.current_scene || curScene)) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">使用的模型</span><span class="health-item__value">' + esc(modelName) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">运行时长</span><span class="health-item__value health-item__value--dim">' + esc(fmtUptime(m.uptime)) + '</span></div>'
       + '</div></div>'
 
     // 区块 2：活跃情况
     html += '<div class="health-section">'
       + '<h4 class="health-section__title">活跃情况</h4>'
       + '<div class="health-grid">'
-      + '<div class="health-item"><span class="health-item__label">活跃会话数</span><span class="health-item__value">' + d.activity.activeSessions + '</span></div>'
-      + '<div class="health-item"><span class="health-item__label">当前进行中的任务</span><span class="health-item__value">' + esc(d.activity.currentTask) + '</span></div>'
-      + '<div class="health-item"><span class="health-item__label">今日任务数</span><span class="health-item__value">' + d.activity.todayTasks + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">活跃会话数</span><span class="health-item__value">' + fmtNum(activeSessions) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">当前进行中的任务</span><span class="health-item__value">' + esc(currentTaskText) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">累计对话次数</span><span class="health-item__value">' + fmtNum(todayTasks) + '</span></div>'
       + '</div></div>'
 
     // 区块 3：Token 概览
     html += '<div class="health-section">'
       + '<h4 class="health-section__title">Token 概览</h4>'
       + '<div class="health-grid">'
-      + '<div class="health-item"><span class="health-item__label">总 token 用量</span><span class="health-item__value">' + esc(d.tokens.total) + '</span></div>'
-      + '<div class="health-item"><span class="health-item__label">日均 token 用量</span><span class="health-item__value health-item__value--dim">' + esc(d.tokens.daily) + '</span></div>'
-      + '<div class="health-item"><span class="health-item__label">今日 token 用量</span><span class="health-item__value">' + esc(d.tokens.today) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">累计 Token</span><span class="health-item__value">' + fmtNum(totalToken) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">输入 Token</span><span class="health-item__value health-item__value--dim">' + fmtNum(inputToken) + '</span></div>'
+      + '<div class="health-item"><span class="health-item__label">输出 Token</span><span class="health-item__value">' + fmtNum(outputToken) + '</span></div>'
       + '</div></div>'
 
-    // 区块 4：趋势图
+    // 区块 4：趋势图（时序聚合接口在阶段 6 开放，暂占位提示）
     html += '<div class="health-section">'
       + '<h4 class="health-section__title">趋势图</h4>'
-      + renderBarChart('token 日趋势', d.trend.dailyData, d.trend.dailyLabels, '#6ee7b7')
-      + renderBarChart('token 周趋势', d.trend.weeklyData, d.trend.weeklyLabels, '#60a5fa')
+      + '<div class="health-chart-placeholder">Token 日/周趋势图将在后续阶段接入（已有时序数据，需聚合接口）</div>'
       + '</div>'
 
-    // 区块 5：结构分布
+    // 区块 5：结构分布（token_dialog/execution/tool 三分类，阶段 6 开放）
+    var td = m.token_dialog, te = m.token_execution, tt = m.token_tool
+    var distHtml
+    if (td != null && te != null && tt != null && (td + te + tt) > 0) {
+      var sum = td + te + tt
+      var d1 = Math.round(td / sum * 100)
+      var d2 = Math.round(te / sum * 100)
+      var d3 = 100 - d1 - d2
+      distHtml = '<div class="health-pie-chart">' + renderPieChart({ dialog: d1, execution: d2, tools: d3 }) + '</div>'
+        + '<div class="health-pie-legend">'
+        + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#6ee7b7;"></span>对话消耗 ' + d1 + '%</span>'
+        + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#60a5fa;"></span>执行消耗 ' + d2 + '%</span>'
+        + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#fbbf24;"></span>工具/检索消耗 ' + d3 + '%</span>'
+        + '</div>'
+    } else {
+      distHtml = '<div class="health-chart-placeholder">Token 结构分布将在后续阶段接入</div>'
+    }
     html += '<div class="health-section">'
       + '<h4 class="health-section__title">结构分布</h4>'
-      + '<div class="health-pie-chart">'
-      + renderPieChart(d.distribution)
-      + '</div>'
-      + '<div class="health-pie-legend">'
-      + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#6ee7b7;"></span>对话消耗 ' + d.distribution.dialog + '%</span>'
-      + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#60a5fa;"></span>执行消耗 ' + d.distribution.execution + '%</span>'
-      + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#fbbf24;"></span>工具/检索消耗 ' + d.distribution.tools + '%</span>'
-      + '</div>'
+      + distHtml
       + '</div>'
 
     healthBody.innerHTML = html
@@ -1235,8 +1265,15 @@
 
   function openHealthModal() {
     closeAllContainers('health')
-    renderHealthPanel()
+    renderHealthPanel()   // 先渲染一次（显示缓存）
     healthModal.classList.add('open')
+    // 异步拉最新指标，成功后重绘
+    if (API) {
+      API.getLatestMetrics().then(function (m) {
+        LOBSTER.metrics = m
+        renderHealthPanel()
+      }).catch(function () {})
+    }
   }
   function closeHealthModal() { healthModal.classList.remove('open') }
 
@@ -1247,9 +1284,19 @@
   function openEventModal(key) {
     var ev = EVT_CARDS[key]; if (!ev) return
     closeAllContainers('event')
-    if (ev.type === 'birth') evCard.innerHTML = ev.html
-    else evCard.innerHTML = '<div class="event-card-generic"><span class="event-card-generic__icon">' + ev.icon + '</span><h2 class="event-card-generic__title">' + ev.title + '</h2><p class="event-card-generic__body">' + ev.body + '</p><button class="event-card-generic__close-btn" data-event-close>知道了</button></div>'
+    if (ev.type === 'birth') {
+      // 出生证：打开前尝试刷新一次 profile（保证显示最新名字等）
+      if (API && !LOBSTER.profile) {
+        API.getProfile().then(function (p) { LOBSTER.profile = p; evCard.innerHTML = buildBirthCardHtml(); wireEventClose() }).catch(function () {})
+      }
+      evCard.innerHTML = buildBirthCardHtml()
+    } else {
+      evCard.innerHTML = '<div class="event-card-generic"><span class="event-card-generic__icon">' + ev.icon + '</span><h2 class="event-card-generic__title">' + ev.title + '</h2><p class="event-card-generic__body">' + ev.body + '</p><button class="event-card-generic__close-btn" data-event-close>知道了</button></div>'
+    }
     evModal.classList.add('open')
+    wireEventClose()
+  }
+  function wireEventClose() {
     evCard.querySelectorAll('[data-event-close]').forEach(function (cb) {
       cb.addEventListener('click', closeEvModal)
     })
@@ -1474,6 +1521,19 @@
   /* ═══ 初始化 ═══ */
   setStatus(TASK_STATUS.IDLE)
   topBarSceneName.textContent = SCENE_NAMES[SCENES.POND]
+
+  // 异步预取龙虾档案 / 技能 / 日记 / 证书 / 指标，拉到后刷新相关 UI
+  preloadLobsterData().then(function () {
+    // 未读日记角标
+    if (LOBSTER.diary && LOBSTER.diary.unread_count > 0) {
+      setUnread(true)
+    }
+    // 如果后端记录了 current_scene，恢复到那个场景
+    if (LOBSTER.profile && LOBSTER.profile.current_scene && LOBSTER.profile.current_scene !== curScene) {
+      // 仅视觉层同步，不触发状态机
+      // （场景主动切换在阶段 5 考试/学习/工作时再上报，这里只读）
+    }
+  }).catch(function (err) { console.warn('preload lobster:', err) })
 
   /* ═══ 页面可见性优化：标签页隐藏时暂停所有动画 ═══ */
   document.addEventListener('visibilitychange', function () {

@@ -4274,3 +4274,20 @@ html, body {
 .lobster-switcher__action + .lobster-switcher__action {
   border-left: 1px solid #eef2f6;
 }
+
+.health-chart-placeholder {
+  padding: 14px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #8a9caf;
+  background: rgba(246, 249, 252, 0.6);
+  border-radius: 8px;
+  line-height: 1.6;
+}
+
+.growth-skill-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: #8a9caf;
+  font-size: 13px;
+}

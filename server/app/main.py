@@ -10,6 +10,11 @@ from app.routers.auth import router as auth_router
 from app.routers.agents import router as agents_router, install_router
 from app.routers.metrics import router as metrics_router
 from app.routers.ws import router as ws_router
+from app.routers.profile import router as profile_router
+from app.routers.skills import router as skills_router
+from app.routers.diary import router as diary_router
+from app.routers.certificate import router as certificate_router
+from app.routers.alerts import router as alerts_router
 
 # Lobster 静态页目录（clawgame 前端迁移而来）
 LOBSTER_STATIC_DIR = Path(__file__).resolve().parent.parent / "static" / "lobster"
@@ -34,6 +39,11 @@ app.include_router(agents_router)
 app.include_router(install_router)
 app.include_router(metrics_router)
 app.include_router(ws_router, prefix="/api")
+app.include_router(profile_router)
+app.include_router(skills_router)
+app.include_router(diary_router)
+app.include_router(certificate_router)
+app.include_router(alerts_router)
 
 # 挂载 Lobster 静态页到 /lobster
 if LOBSTER_STATIC_DIR.is_dir():

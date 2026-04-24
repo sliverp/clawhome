@@ -21,6 +21,7 @@ from app.schemas.agent import (
     AgentOut,
     AgentRename,
 )
+from app.services.agent_init import init_lobster_profile
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -76,6 +77,10 @@ def create_agent(
     db.add(agent)
     db.commit()
     db.refresh(agent)
+
+    # 同步初始化龙虾档案 / 技能树 / 出生日记 / 出生证明
+    init_lobster_profile(db, agent)
+    db.commit()
 
     install_url = f"{settings.SERVER_BASE_URL}/api/install/{bind_token}"
     prompt = (

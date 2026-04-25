@@ -2,7 +2,7 @@ import WebSocket from "ws";
 import { AgentConfig, InstanceConfig } from "./config.js";
 import { collectCustomMetrics, collectCustomState } from "./collectors/custom.js";
 import { executeCommand } from "./executor.js";
-import { saveInstanceConfig } from "./storage.js";
+import { loadInstanceConfig, saveInstanceConfig } from "./storage.js";
 import { StateSnapshot } from "./collectors/base.js";
 
 const HEARTBEAT_INTERVAL_MS = 20_000;   // send ping every 20s
@@ -119,7 +119,18 @@ export class ClawHomeClient {
         console.log(`[clawhome] Bound successfully. Agent ID: ${msg.data.agent_id}`);
         this.instanceConfig.accessToken = accessToken;
         this.instanceConfig.bindToken = null;
-        saveInstanceConfig(this.instanceConfig.instanceId, this.instanceConfig);
+        // 合并而不是覆盖：磁盘上 setup-openapi 等外部工具可能写入了新字段
+        // （如 openapi），只更新本次需要的两个字段后整体落盘
+        try {
+          const onDisk = loadInstanceConfig(this.instanceConfig.instanceId);
+          const merged = { ...onDisk, accessToken, bindToken: null };
+          saveInstanceConfig(this.instanceConfig.instanceId, merged);
+          // 把磁盘上的字段同步回内存，确保后续逻辑（如 chat）能读到 openapi
+          Object.assign(this.instanceConfig, merged);
+        } catch {
+          // 磁盘读失败时兜底：至少把内存里的状态写出去
+          saveInstanceConfig(this.instanceConfig.instanceId, this.instanceConfig);
+        }
         this.authenticated = true;
         this.startReporting();
         break;
@@ -207,9 +218,19 @@ export class ClawHomeClient {
 
       // 走 openclaw-openapi 插件（本机 ws://127.0.0.1:<port>）
       // 端口和 token 从 instanceConfig.openapi 读取（init 时由 openapi-installer 写入）
-      const openapi = (this.instanceConfig as any).openapi as
+      // 每次都重读磁盘，支持运行时 setup-openapi 热生效
+      let openapi = (this.instanceConfig as any).openapi as
         | { port?: number; host?: string; token?: string }
         | undefined;
+      if (!openapi || !openapi.token || !openapi.port) {
+        try {
+          const onDisk = loadInstanceConfig(this.instanceConfig.instanceId);
+          if ((onDisk as any).openapi) {
+            openapi = (onDisk as any).openapi;
+            Object.assign(this.instanceConfig, { openapi });
+          }
+        } catch {}
+      }
 
       if (!openapi || !openapi.token || !openapi.port) {
         this.send({

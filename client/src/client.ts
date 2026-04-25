@@ -208,6 +208,7 @@ export class ClawHomeClient {
     if (cmd === "chat") {
       const message = typeof args?.message === "string" ? args.message.trim() : "";
       const sessionId = typeof args?.session_id === "string" ? args.session_id : undefined;
+      console.log(`[clawhome] chat cmd received. request_id=${requestId} message=${JSON.stringify(message).slice(0, 100)}`);
       if (!message) {
         this.send({
           type: "command_result",
@@ -222,17 +223,25 @@ export class ClawHomeClient {
       let openapi = (this.instanceConfig as any).openapi as
         | { port?: number; host?: string; token?: string }
         | undefined;
+      console.log(`[clawhome] chat: in-memory openapi = ${JSON.stringify(openapi)}`);
       if (!openapi || !openapi.token || !openapi.port) {
         try {
           const onDisk = loadInstanceConfig(this.instanceConfig.instanceId);
+          console.log(`[clawhome] chat: reloaded config from disk, keys=${Object.keys(onDisk).join(",")}`);
           if ((onDisk as any).openapi) {
             openapi = (onDisk as any).openapi;
             Object.assign(this.instanceConfig, { openapi });
+            console.log(`[clawhome] chat: found openapi on disk = ${JSON.stringify(openapi)}`);
+          } else {
+            console.log(`[clawhome] chat: on-disk config has NO openapi field`);
           }
-        } catch {}
+        } catch (err) {
+          console.log(`[clawhome] chat: reload config failed: ${(err as Error).message}`);
+        }
       }
 
       if (!openapi || !openapi.token || !openapi.port) {
+        console.log(`[clawhome] chat: REJECT — no openapi info. file=${`~/.clawhome/${this.instanceConfig.instanceId}/config.json`}`);
         this.send({
           type: "command_result",
           data: {
@@ -251,6 +260,7 @@ export class ClawHomeClient {
 
       try {
         const { chatOnce } = await import("./openapi-client.js");
+        console.log(`[clawhome] chat: connecting to ${url} with token=${openapi.token!.slice(0, 6)}…`);
         const result = await chatOnce({
           url,
           token: openapi.token,
@@ -258,6 +268,7 @@ export class ClawHomeClient {
           sessionId,
           timeoutMs: 300_000,
         });
+        console.log(`[clawhome] chat: got reply, text=${JSON.stringify(result.text).slice(0, 200)}`);
         this.send({
           type: "command_result",
           data: {
@@ -271,6 +282,7 @@ export class ClawHomeClient {
           },
         });
       } catch (err) {
+        console.log(`[clawhome] chat: failed — ${(err as Error).message}`);
         this.send({
           type: "command_result",
           data: {

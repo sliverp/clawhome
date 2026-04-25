@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -10,7 +10,13 @@ from app.core.security import get_current_user
 from app.models.agent import Agent
 from app.models.metric import Metric, MetricDefinition
 from app.models.user import User
-from app.schemas.metric import MetricDefinitionOut, MetricLatest, MetricPoint
+from app.schemas.metric import (
+    MetricBreakdown,
+    MetricBucket,
+    MetricDefinitionOut,
+    MetricLatest,
+    MetricPoint,
+)
 
 router = APIRouter(tags=["metrics"])
 
@@ -95,3 +101,125 @@ def get_metric_definitions(
     if agent_type:
         q = q.filter(MetricDefinition.agent_type == agent_type)
     return q.all()
+
+
+# ===== 聚合接口（阶段 6） =====
+
+def _bucket_key_day(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d")
+
+
+def _bucket_key_week(dt: datetime) -> str:
+    iso = dt.isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _aggregate_bucketed(
+    db: Session,
+    agent_id: int,
+    metric_key: str,
+    start: datetime,
+    end: datetime,
+    key_fn,
+) -> list[MetricBucket]:
+    """把 [start, end] 范围内的指标按 key_fn 分桶，取每桶最大值作为快照，
+    再与前一桶差分得到该桶内的"用量"。适用于累计型指标（token_total 等）。"""
+    rows = (
+        db.query(Metric.recorded_at, Metric.value)
+        .filter(
+            Metric.agent_id == agent_id,
+            Metric.metric_key == metric_key,
+            Metric.recorded_at >= start,
+            Metric.recorded_at <= end,
+        )
+        .order_by(Metric.recorded_at.asc())
+        .all()
+    )
+    bucket_max: dict[str, float] = {}
+    bucket_last: dict[str, datetime] = {}
+    for ts, val in rows:
+        key = key_fn(ts)
+        bucket_max[key] = max(bucket_max.get(key, 0.0), float(val))
+        bucket_last[key] = ts
+
+    sorted_keys = sorted(bucket_max.keys())
+    result: list[MetricBucket] = []
+    prev_val = 0.0
+    for k in sorted_keys:
+        v = bucket_max[k]
+        delta = max(0.0, v - prev_val)
+        result.append(MetricBucket(bucket=k, value=v, delta=delta))
+        prev_val = v
+    return result
+
+
+@router.get(
+    "/agents/{agent_id}/metrics/daily",
+    response_model=list[MetricBucket],
+)
+def get_daily_metrics(
+    agent_id: int,
+    metric_key: str = Query("token_total", description="聚合的指标名"),
+    days: int = Query(7, ge=1, le=90),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """最近 N 天按日聚合。value=当天最新累计值，delta=相对昨天的增量（约等于当天用量）。"""
+    _get_agent_or_404(agent_id, current_user.id, db)
+    end = datetime.now(timezone.utc).replace(tzinfo=None)
+    start = end - timedelta(days=days)
+    return _aggregate_bucketed(db, agent_id, metric_key, start, end, _bucket_key_day)
+
+
+@router.get(
+    "/agents/{agent_id}/metrics/weekly",
+    response_model=list[MetricBucket],
+)
+def get_weekly_metrics(
+    agent_id: int,
+    metric_key: str = Query("token_total"),
+    weeks: int = Query(4, ge=1, le=26),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """最近 N 周按 ISO 周聚合"""
+    _get_agent_or_404(agent_id, current_user.id, db)
+    end = datetime.now(timezone.utc).replace(tzinfo=None)
+    start = end - timedelta(weeks=weeks)
+    return _aggregate_bucketed(db, agent_id, metric_key, start, end, _bucket_key_week)
+
+
+@router.get(
+    "/agents/{agent_id}/metrics/breakdown",
+    response_model=MetricBreakdown,
+)
+def get_token_breakdown(
+    agent_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Token 结构分布：dialog / execution / tool 最新快照"""
+    _get_agent_or_404(agent_id, current_user.id, db)
+
+    def _latest(key: str) -> tuple[float, datetime | None]:
+        row = (
+            db.query(Metric.value, Metric.recorded_at)
+            .filter(Metric.agent_id == agent_id, Metric.metric_key == key)
+            .order_by(desc(Metric.recorded_at))
+            .first()
+        )
+        return (float(row[0]), row[1]) if row else (0.0, None)
+
+    dialog, ts1 = _latest("token_dialog")
+    execution, ts2 = _latest("token_execution")
+    tool, ts3 = _latest("token_tool")
+    total = dialog + execution + tool
+    recorded = max([t for t in (ts1, ts2, ts3) if t is not None], default=None)
+    return MetricBreakdown(
+        agent_id=agent_id,
+        dialog=dialog,
+        execution=execution,
+        tool=tool,
+        total=total,
+        recorded_at=recorded,
+    )

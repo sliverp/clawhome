@@ -1201,35 +1201,57 @@
       + '<div class="health-item"><span class="health-item__label">输出 Token</span><span class="health-item__value">' + fmtNum(outputToken) + '</span></div>'
       + '</div></div>'
 
-    // 区块 4：趋势图（时序聚合接口在阶段 6 开放，暂占位提示）
+    // 区块 4：趋势图（日/周聚合接口，阶段 6 开放）
+    // 预渲染占位，openHealthModal 会异步拉数据填进 <div data-trend>...</div>
     html += '<div class="health-section">'
       + '<h4 class="health-section__title">趋势图</h4>'
-      + '<div class="health-chart-placeholder">Token 日/周趋势图将在后续阶段接入（已有时序数据，需聚合接口）</div>'
+      + '<div data-trend-daily><div class="health-chart-placeholder">日趋势加载中…</div></div>'
+      + '<div data-trend-weekly><div class="health-chart-placeholder">周趋势加载中…</div></div>'
       + '</div>'
 
-    // 区块 5：结构分布（token_dialog/execution/tool 三分类，阶段 6 开放）
-    var td = m.token_dialog, te = m.token_execution, tt = m.token_tool
-    var distHtml
-    if (td != null && te != null && tt != null && (td + te + tt) > 0) {
-      var sum = td + te + tt
-      var d1 = Math.round(td / sum * 100)
-      var d2 = Math.round(te / sum * 100)
-      var d3 = 100 - d1 - d2
-      distHtml = '<div class="health-pie-chart">' + renderPieChart({ dialog: d1, execution: d2, tools: d3 }) + '</div>'
-        + '<div class="health-pie-legend">'
-        + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#6ee7b7;"></span>对话消耗 ' + d1 + '%</span>'
-        + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#60a5fa;"></span>执行消耗 ' + d2 + '%</span>'
-        + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#fbbf24;"></span>工具/检索消耗 ' + d3 + '%</span>'
-        + '</div>'
-    } else {
-      distHtml = '<div class="health-chart-placeholder">Token 结构分布将在后续阶段接入</div>'
-    }
+    // 区块 5：结构分布（token_dialog/execution/tool 三分类）
+    // 占位，openHealthModal 会异步拉 /metrics/breakdown 填进来
     html += '<div class="health-section">'
       + '<h4 class="health-section__title">结构分布</h4>'
-      + distHtml
+      + '<div data-breakdown><div class="health-chart-placeholder">结构分布加载中…</div></div>'
       + '</div>'
 
     healthBody.innerHTML = html
+  }
+
+  // 把趋势图数据（后端返回的 bucket 数组）填到 health 面板上
+  function renderTrendInto(selector, buckets, title, color) {
+    var container = healthBody.querySelector(selector)
+    if (!container) return
+    if (!Array.isArray(buckets) || buckets.length === 0) {
+      container.innerHTML = '<div class="health-chart-placeholder">' + esc(title) + '：暂无数据</div>'
+      return
+    }
+    var data = buckets.map(function (b) { return Math.max(0, Math.round(b.delta || 0)) })
+    var labels = buckets.map(function (b) { return String(b.bucket).slice(5) })  // "04-24"
+    container.innerHTML = renderBarChart(title, data, labels, color)
+  }
+
+  // 把结构分布数据填到 health 面板上
+  function renderBreakdownInto(data) {
+    var container = healthBody.querySelector('[data-breakdown]')
+    if (!container) return
+    var d = data || {}
+    var sum = (d.dialog || 0) + (d.execution || 0) + (d.tool || 0)
+    if (sum <= 0) {
+      container.innerHTML = '<div class="health-chart-placeholder">Token 结构分布：暂无数据</div>'
+      return
+    }
+    var d1 = Math.round((d.dialog || 0) / sum * 100)
+    var d2 = Math.round((d.execution || 0) / sum * 100)
+    var d3 = Math.max(0, 100 - d1 - d2)
+    container.innerHTML =
+      '<div class="health-pie-chart">' + renderPieChart({ dialog: d1, execution: d2, tools: d3 }) + '</div>'
+      + '<div class="health-pie-legend">'
+      + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#6ee7b7;"></span>对话消耗 ' + d1 + '%</span>'
+      + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#60a5fa;"></span>执行消耗 ' + d2 + '%</span>'
+      + '<span class="health-pie-legend__item"><span class="health-pie-dot" style="background:#fbbf24;"></span>工具/检索消耗 ' + d3 + '%</span>'
+      + '</div>'
   }
 
   // 简易柱状图
@@ -1262,13 +1284,33 @@
     closeAllContainers('health')
     renderHealthPanel()   // 先渲染一次（显示缓存）
     healthModal.classList.add('open')
-    // 异步拉最新指标，成功后重绘
-    if (API) {
-      API.getLatestMetrics().then(function (m) {
-        LOBSTER.metrics = m
-        renderHealthPanel()
-      }).catch(function () {})
-    }
+    if (!API) return
+    // 并行拉：最新指标、日/周趋势、Token 分布
+    API.getLatestMetrics().then(function (m) {
+      LOBSTER.metrics = m
+      renderHealthPanel()
+      // renderHealthPanel 会把趋势/分布容器清空重建，所以再异步填一次
+      fillTrendAndBreakdown()
+    }).catch(function () { fillTrendAndBreakdown() })
+  }
+
+  function fillTrendAndBreakdown() {
+    if (!API) return
+    API.getDailyMetrics(null, 7).then(function (arr) {
+      renderTrendInto('[data-trend-daily]', arr, 'Token 日趋势（近 7 天）', '#6ee7b7')
+    }).catch(function () {
+      renderTrendInto('[data-trend-daily]', [], 'Token 日趋势', '#6ee7b7')
+    })
+    API.getWeeklyMetrics(null, 4).then(function (arr) {
+      renderTrendInto('[data-trend-weekly]', arr, 'Token 周趋势（近 4 周）', '#60a5fa')
+    }).catch(function () {
+      renderTrendInto('[data-trend-weekly]', [], 'Token 周趋势', '#60a5fa')
+    })
+    API.getTokenBreakdown().then(function (b) {
+      renderBreakdownInto(b)
+    }).catch(function () {
+      renderBreakdownInto(null)
+    })
   }
   function closeHealthModal() { healthModal.classList.remove('open') }
 

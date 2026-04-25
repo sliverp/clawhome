@@ -99,6 +99,22 @@
       // 已存在的端点 /agents/{id}/metrics/latest
       return apiFetch('/agents/' + (id || this.agentId) + '/metrics/latest')
     },
+    /** 按日聚合 token 用量（阶段 6） */
+    getDailyMetrics(id, days, metricKey) {
+      const q = 'metric_key=' + encodeURIComponent(metricKey || 'token_total')
+        + '&days=' + (days || 7)
+      return apiFetch('/agents/' + (id || this.agentId) + '/metrics/daily?' + q)
+    },
+    /** 按周聚合（阶段 6） */
+    getWeeklyMetrics(id, weeks, metricKey) {
+      const q = 'metric_key=' + encodeURIComponent(metricKey || 'token_total')
+        + '&weeks=' + (weeks || 4)
+      return apiFetch('/agents/' + (id || this.agentId) + '/metrics/weekly?' + q)
+    },
+    /** Token 三分类最新快照（阶段 6） */
+    getTokenBreakdown(id) {
+      return apiFetch('/agents/' + (id || this.agentId) + '/metrics/breakdown')
+    },
     getAlerts(id, resolved) {
       let q = ''
       if (resolved === true) q = '?resolved=true'
@@ -235,7 +251,7 @@
       'assets/phaser.min.js',
       'phaser-scenes.js?v=3.3',
       'sprite-animator.js',
-      'app.js?v=12.1',
+      'app.js?v=13.0',
     ]
     function loadNext(i) {
       if (i >= scripts.length) return

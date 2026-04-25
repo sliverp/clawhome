@@ -244,6 +244,14 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   let sessionCount = 0
   let errorCount = 0
 
+  // 按场景分类的 token 用量（健康看板饼图用）
+  // - dialog: 默认 chat (agent=main 或其它非执行类 agent)
+  // - execution: 通过 ClawHome 触发的 exam/study/work 类长任务
+  // - tool: 工具调用产生的 token（基于 toolCall message 占比近似）
+  let tokenDialog = 0
+  let tokenExecution = 0
+  const EXECUTION_AGENTS = new Set(['exam', 'study', 'work'])
+
   // Latest active session info
   let latestModel = ''
   let latestProvider = ''
@@ -267,6 +275,10 @@ export function collectOpenclawMetrics(): MetricSnapshot {
     const sessionsDir = path.join(agentDir, 'sessions')
     if (!fs.existsSync(sessionsDir)) continue
 
+    // 该 agent 名（exam/study/work 视为执行类，其它视为对话类）
+    const agentName = path.basename(agentDir)
+    const isExecution = EXECUTION_AGENTS.has(agentName)
+
     // ── Parse sessions.json for per-session summaries ──────────────────
     const sessionsIndex = path.join(sessionsDir, 'sessions.json')
     try {
@@ -275,14 +287,22 @@ export function collectOpenclawMetrics(): MetricSnapshot {
 
       for (const session of Object.values(idx)) {
         const modelRef = getModelRef(session.model, session.modelProvider)
+        const sessTotal = session.totalTokens ?? ((session.inputTokens ?? 0) + (session.outputTokens ?? 0))
         totalInputTokens += session.inputTokens ?? 0
         totalOutputTokens += session.outputTokens ?? 0
-        totalTokens += session.totalTokens ?? ((session.inputTokens ?? 0) + (session.outputTokens ?? 0))
+        totalTokens += sessTotal
         totalCacheRead += session.cacheRead ?? 0
         totalCacheWrite += session.cacheWrite ?? 0
         totalCost += session.estimatedCostUsd ?? 0
         totalCompactions += session.compactionCount ?? 0
         totalRuntimeMs += session.runtimeMs ?? 0
+
+        // Token 分类（按 agent 名）
+        if (isExecution) {
+          tokenExecution += sessTotal
+        } else {
+          tokenDialog += sessTotal
+        }
         if (modelRef) {
           const usage = modelUsage[modelRef] ?? {
             model_ref: modelRef,
@@ -366,6 +386,18 @@ export function collectOpenclawMetrics(): MetricSnapshot {
   snapshot['assistant_turns'] = assistantTurns
   snapshot['tool_call_count'] = toolCallCount
   snapshot['error_count'] = errorCount
+
+  // Token 三分类（健康看板饼图用）
+  // - dialog / execution 是按 agent 目录分的真实数据
+  // - tool 是"在 token_dialog 里有多少消耗在工具调用上"的近似估算：
+  //   用 toolCall 占 assistantTurns 的比例 × tokenDialog
+  //   （精确分类需要 message 级 usage，目前 openclaw 不写 message.usage）
+  const toolRatio = assistantTurns > 0 ? Math.min(1, toolCallCount / assistantTurns) : 0
+  const tokenTool = Math.round(tokenDialog * toolRatio)
+  const tokenDialogNet = Math.max(0, tokenDialog - tokenTool)
+  snapshot['token_dialog'] = tokenDialogNet
+  snapshot['token_execution'] = tokenExecution
+  snapshot['token_tool'] = tokenTool
 
   // Current session context
   snapshot['context_tokens'] = latestContextTokens

@@ -180,14 +180,31 @@ export async function setupOpenApi(opts: {
   if (!opts.skipRestart) {
     console.log(`[clawhome] Restarting openclaw to load plugin/config ...`);
     try {
-      await runOpenclaw(bin, ["restart"]);
+      // openclaw restart 可能是前台阻塞命令（重启后不退出），给它短超时。
+      // 就算超时也没关系：插件和 token 都写进去了，下次 openclaw 起来就会加载。
+      await runOpenclawWithTimeout(bin, ["restart"], 10_000);
     } catch (err) {
       // restart 失败不致命：用户可能没启动 openclaw，下次启动自然会读取新配置
       console.warn(
-        `[clawhome] openclaw restart failed (non-fatal): ${(err as Error).message}`
+        `[clawhome] openclaw restart skipped or failed (non-fatal): ${(err as Error).message}`
+      );
+      console.warn(
+        `[clawhome] If openclaw was already running with the old config, ` +
+        `please manually run: openclaw restart`
       );
     }
   }
 
   return info;
+}
+
+/** 带较短超时的 openclaw 调用，用于 restart 这种可能阻塞的命令 */
+async function runOpenclawWithTimeout(
+  openclawBin: string, args: string[], timeoutMs: number,
+): Promise<string> {
+  const r = await executeCommandArgs([openclawBin, ...args], timeoutMs);
+  if (!r.success) {
+    throw new Error((r.error || "").slice(0, 200) + (r.output ? `\n${r.output.slice(0, 300)}` : ""));
+  }
+  return r.output;
 }

@@ -144,19 +144,61 @@ program
   .description("Install/repair the openclaw-openapi plugin and write its connection info into an existing instance")
   .requiredOption("--instance <id>", "Instance ID to attach the openapi info to")
   .option("--openclaw-bin <path>", "Full path to openclaw CLI")
-  .action(async (opts: { instance: string; openclawBin?: string }) => {
+  .option("--skip-restart", "Don't try to 'openclaw restart' after writing config")
+  .action(async (opts: { instance: string; openclawBin?: string; skipRestart?: boolean }) => {
     const cfg = loadInstanceConfig(opts.instance) as InstanceConfig & {
       openapi?: { port: number; host: string; token: string };
     };
-    const { setupOpenApi } = await import("./openapi-installer.js");
+    const {
+      findOpenclawBinary, installPlugin, isPluginInstalled, ensureChannelConfigured,
+    } = await import("./openapi-installer.js");
+
     try {
-      const info = await setupOpenApi({ openclawBin: opts.openclawBin });
+      // 1) 定位 openclaw
+      const bin = await findOpenclawBinary(opts.openclawBin);
+      console.log(`[clawhome] Found openclaw at ${bin}`);
+
+      // 2) 装插件（如未装）
+      if (isPluginInstalled()) {
+        console.log(`[clawhome] openclaw-openapi plugin already installed.`);
+      } else {
+        await installPlugin(bin);
+      }
+
+      // 3) 写 openclaw.json（端口 + token）
+      const info = ensureChannelConfigured({});
+      console.log(
+        `[clawhome] openapi channel configured: ${info.host}:${info.port} ` +
+        `(token=${info.token.slice(0, 6)}…)`
+      );
+
+      // 4) ✅ 立即把信息写到 clawhome 的 instance config（这一步在任何 restart 尝试之前）
       cfg.openapi = info;
       saveInstanceConfig(opts.instance, cfg);
       console.log(
-        `[clawhome] openapi configured for instance ${opts.instance}: ` +
-        `${info.host}:${info.port}`
+        `[clawhome] openapi info saved to instance config: ` +
+        `~/.clawhome/${opts.instance}/config.json`
       );
+
+      // 5) 可选：尝试 openclaw restart，失败或阻塞不影响已保存的 config
+      if (!opts.skipRestart) {
+        console.log(`[clawhome] Attempting 'openclaw restart' (non-fatal, short timeout) ...`);
+        const { executeCommandArgs } = await import("./executor.js");
+        const r = await executeCommandArgs([bin, "restart"], 15_000);
+        if (r.success) {
+          console.log(`[clawhome] openclaw restarted.`);
+        } else {
+          console.warn(
+            `[clawhome] 'openclaw restart' failed or timed out (non-fatal).`
+          );
+          console.warn(
+            `[clawhome] If openclaw was running with the old config, please run: openclaw restart`
+          );
+        }
+      }
+
+      console.log(`\n[clawhome] setup-openapi done. You may need to restart clawhome-client too:`);
+      console.log(`  kill $(pgrep -f "clawhome-client run")`);
     } catch (err) {
       console.error(
         "[clawhome] setup-openapi failed: " +

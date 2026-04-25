@@ -27,6 +27,15 @@ export interface AgentConfig {
   report_interval: number; // seconds
 }
 
+export interface OpenApiConnInfo {
+  /** WebSocket port that openclaw-openapi listens on (本机 only) */
+  port: number;
+  /** Bind host, usually 127.0.0.1 */
+  host: string;
+  /** Auth token written to ~/.openclaw/openclaw.json by setup */
+  token: string;
+}
+
 export interface InstanceConfig {
   instanceId: string;
   serverUrl: string;
@@ -35,4 +44,6 @@ export interface InstanceConfig {
   localPort: number;
   agentType: string;
   hostname: string;
+  /** Connection info for the local openclaw-openapi plugin (chat command) */
+  openapi?: OpenApiConnInfo;
 }

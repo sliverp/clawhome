@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import { AgentConfig, InstanceConfig } from "./config.js";
 import { collectCustomMetrics, collectCustomState } from "./collectors/custom.js";
-import { executeCommand, executeCommandArgs } from "./executor.js";
+import { executeCommand } from "./executor.js";
 import { saveInstanceConfig } from "./storage.js";
 import { StateSnapshot } from "./collectors/base.js";
 
@@ -196,7 +196,7 @@ export class ClawHomeClient {
 
     if (cmd === "chat") {
       const message = typeof args?.message === "string" ? args.message.trim() : "";
-      const agentName = typeof args?.agent_name === "string" ? args.agent_name.trim() : "main";
+      const sessionId = typeof args?.session_id === "string" ? args.session_id : undefined;
       if (!message) {
         this.send({
           type: "command_result",
@@ -205,65 +205,58 @@ export class ClawHomeClient {
         return;
       }
 
-      console.log(`[clawhome] Running OpenClaw chat on agent ${agentName}`);
-      const result = await executeCommandArgs(
-        ["openclaw", "agent", "--local", "--agent", agentName, "-m", message, "--json"],
-        300_000
-      );
-      if (!result.success) {
+      // 走 openclaw-openapi 插件（本机 ws://127.0.0.1:<port>）
+      // 端口和 token 从 instanceConfig.openapi 读取（init 时由 openapi-installer 写入）
+      const openapi = (this.instanceConfig as any).openapi as
+        | { port?: number; host?: string; token?: string }
+        | undefined;
+
+      if (!openapi || !openapi.token || !openapi.port) {
         this.send({
           type: "command_result",
-          data: { request_id: requestId, success: false, output: result.output, error: result.error },
+          data: {
+            request_id: requestId,
+            success: false,
+            output: "",
+            error:
+              "openapi not configured. Run `clawhome-client setup-openapi` to install the plugin.",
+          },
         });
         return;
       }
 
-      try {
-        const parsed = JSON.parse(result.output) as {
-          payloads?: Array<{ text?: string | null; mediaUrl?: string | null }>
-          meta?: {
-            durationMs?: number
-            aborted?: boolean
-            stopReason?: string
-            agentMeta?: {
-              sessionId?: string
-              provider?: string
-              model?: string
-              usage?: Record<string, number>
-            }
-          }
-        }
-        const text = (parsed.payloads ?? [])
-          .map((payload) => payload.text?.trim())
-          .filter((value): value is string => Boolean(value))
-          .join("\n\n")
+      const url = `ws://${openapi.host || "127.0.0.1"}:${openapi.port}`;
+      console.log(`[clawhome] Sending chat to openclaw-openapi at ${url}`);
 
+      try {
+        const { chatOnce } = await import("./openapi-client.js");
+        const result = await chatOnce({
+          url,
+          token: openapi.token,
+          message,
+          sessionId,
+          timeoutMs: 300_000,
+        });
         this.send({
           type: "command_result",
           data: {
             request_id: requestId,
             success: true,
             output: {
-              text,
-              payloads: parsed.payloads ?? [],
-              session_id: parsed.meta?.agentMeta?.sessionId ?? null,
-              provider: parsed.meta?.agentMeta?.provider ?? null,
-              model: parsed.meta?.agentMeta?.model ?? null,
-              usage: parsed.meta?.agentMeta?.usage ?? {},
-              duration_ms: parsed.meta?.durationMs ?? null,
-              aborted: parsed.meta?.aborted ?? false,
-              stop_reason: parsed.meta?.stopReason ?? null,
+              text: result.text,
+              message_id: result.messageId,
+              raw: result.raw,
             },
           },
         });
-      } catch (error) {
+      } catch (err) {
         this.send({
           type: "command_result",
           data: {
             request_id: requestId,
             success: false,
-            output: result.output,
-            error: error instanceof Error ? error.message : String(error),
+            output: "",
+            error: err instanceof Error ? err.message : String(err),
           },
         });
       }

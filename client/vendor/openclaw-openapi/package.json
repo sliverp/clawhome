@@ -1,0 +1,56 @@
+{
+  "name": "@openclaw/openapi",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "openclaw-openapi": "./bin/openapi-cli.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "client",
+    "bin",
+    "index.ts",
+    "tsconfig.json",
+    "openclaw.plugin.json"
+  ],
+  "openclaw": {
+    "id": "openclaw-openapi",
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "openapi",
+      "label": "Open API",
+      "selectionLabel": "Open API (WebSocket)",
+      "blurb": "Connect to OpenClaw via WebSocket API for custom clients",
+      "order": 90
+    },
+    "install": {
+      "npmSpec": "@openclaw/openapi"
+    }
+  },
+  "scripts": {
+    "build": "tsc || true",
+    "dev": "tsc --watch",
+    "prepack": "npm install --omit=dev",
+    "setup": "npm install && npm run build && openclaw plugins install .",
+    "uninstall": "openclaw plugins uninstall openclaw-openapi && openclaw restart"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "bundledDependencies": [
+    "ws"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}

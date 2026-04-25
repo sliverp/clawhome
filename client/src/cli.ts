@@ -49,7 +49,12 @@ program
   .requiredOption("--server <url>", "ClawHome server URL")
   .requiredOption("--token <token>", "Bind token from dashboard")
   .option("--type <type>", "Agent type override (skip auto-detection)")
-  .action(async (opts: { server: string; token: string; type?: string }) => {
+  .option("--openclaw-bin <path>", "Full path to openclaw CLI (override auto-detection)")
+  .option("--skip-openapi", "Skip openclaw-openapi plugin install (chat will be unavailable)")
+  .action(async (opts: {
+    server: string; token: string; type?: string;
+    openclawBin?: string; skipOpenapi?: boolean;
+  }) => {
     console.log("[clawhome] Starting initialization...");
 
     // 1. Detect agent type
@@ -72,7 +77,25 @@ program
     const agentConfig = yaml.load(fs.readFileSync(tplPath, "utf-8")) as AgentConfig;
     agentConfig.agent_type = detected.agentType;
 
-    // 5. Save configs
+    // 5. 安装 openclaw-openapi 插件（让 chat 能力可用）
+    let openapiInfo: { port: number; host: string; token: string } | undefined;
+    if (opts.skipOpenapi) {
+      console.log("[clawhome] --skip-openapi set, chat command will not be available.");
+    } else {
+      const { setupOpenApi } = await import("./openapi-installer.js");
+      try {
+        openapiInfo = await setupOpenApi({ openclawBin: opts.openclawBin });
+      } catch (err) {
+        console.error(
+          "\n[clawhome] Failed to install openclaw-openapi plugin: " +
+          (err instanceof Error ? err.message : String(err))
+        );
+        console.error("[clawhome] Aborting init. Re-run with --skip-openapi to bypass, or fix the issue and retry.");
+        process.exit(1);
+      }
+    }
+
+    // 6. Save configs
     const instanceConfig: InstanceConfig = {
       instanceId,
       serverUrl: opts.server,
@@ -81,21 +104,25 @@ program
       localPort,
       agentType: detected.agentType,
       hostname: os.hostname(),
-    };
+      ...(openapiInfo ? { openapi: openapiInfo } : {}),
+    } as InstanceConfig;
     saveInstanceConfig(instanceId, instanceConfig);
     saveAgentConfig(instanceId, agentConfig);
 
     console.log(`[clawhome] Instance ID : ${instanceId}`);
     console.log(`[clawhome] Config dir  : ${clawhomeDir(instanceId)}`);
     console.log(`[clawhome] Local API   : 127.0.0.1:${localPort}`);
+    if (openapiInfo) {
+      console.log(`[clawhome] OpenAPI     : ${openapiInfo.host}:${openapiInfo.port}`);
+    }
 
-    // 6. Build the run command for the daemon
+    // 7. Build the run command for the daemon
     const runCmd = `${process.execPath} ${__filename} run --instance ${instanceId}`;
 
-    // 7. Register background service
+    // 8. Register background service
     registerDaemon(instanceId, runCmd);
 
-    // 8. Brief wait then verify
+    // 9. Brief wait then verify
     await new Promise((r) => setTimeout(r, 3000));
     try {
       const updated = loadInstanceConfig(instanceId);
@@ -107,6 +134,35 @@ program
       }
     } catch {
       console.log("[clawhome] Service started. Check your dashboard.");
+    }
+  });
+
+// ── setup-openapi command (manual, after init failed) ────────────────────
+
+program
+  .command("setup-openapi")
+  .description("Install/repair the openclaw-openapi plugin and write its connection info into an existing instance")
+  .requiredOption("--instance <id>", "Instance ID to attach the openapi info to")
+  .option("--openclaw-bin <path>", "Full path to openclaw CLI")
+  .action(async (opts: { instance: string; openclawBin?: string }) => {
+    const cfg = loadInstanceConfig(opts.instance) as InstanceConfig & {
+      openapi?: { port: number; host: string; token: string };
+    };
+    const { setupOpenApi } = await import("./openapi-installer.js");
+    try {
+      const info = await setupOpenApi({ openclawBin: opts.openclawBin });
+      cfg.openapi = info;
+      saveInstanceConfig(opts.instance, cfg);
+      console.log(
+        `[clawhome] openapi configured for instance ${opts.instance}: ` +
+        `${info.host}:${info.port}`
+      );
+    } catch (err) {
+      console.error(
+        "[clawhome] setup-openapi failed: " +
+        (err instanceof Error ? err.message : String(err))
+      );
+      process.exit(1);
     }
   });
 
